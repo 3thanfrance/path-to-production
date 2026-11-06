@@ -1,0 +1,10 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {Run,rank} from '../engine.js';
+test('red booth holds for eight seconds and resumes without double charging',()=>{const r=new Run();r.lane=0;r.toll();assert.equal(r.stop,8);for(let i=0;i<480;i++)r.update(1/60,true);assert.ok(r.stop<1e-10);assert.ok(Math.abs(r.time-37)<1e-8);assert.equal(r.tollLost,8);r.update(.1,true);assert.ok(r.speed>0);});
+test('purple lane refunds two seconds with zero stop and respects cap',()=>{const r=new Run();r.lane=r.purple;r.toll();assert.equal(r.time,47);assert.equal(r.stop,0);r.time=59;r.toll();assert.equal(r.time,60);});
+test('purchase requires 15 brilliance, cannot stack, consumes on red only',()=>{const r=new Run();assert.equal(r.buy(),false);r.brilliance=30;assert.equal(r.buy(),true);assert.equal(r.brilliance,15);assert.equal(r.buy(),false);r.lane=r.purple;r.toll();assert.equal(r.pass,true);r.lane=0;r.toll();assert.equal(r.pass,false);assert.equal(r.stop,2);assert.equal(r.tollLost,2);});
+test('flow refunds are capped and the clock eventually ends',()=>{const r=new Run(()=>.5);r.speed=42;r.time=60;r.plaza=1e9;r.nextSpawn=1e9;for(let i=0;i<20000&&!r.over;i++)r.update(1/60,true);assert.equal(r.over,true);assert.equal(r.time,0);assert.ok(r.refunded<=90);assert.ok(r.longest>100);});
+test('hazards charge three seconds; coins and gems collect',()=>{const r=new Run();r.nextSpawn=1e9;r.objects=[{kind:'hazard',lane:1,z:0,type:0},{kind:'gem',lane:1,z:0},{kind:'coin',lane:1,z:0}];r.update(.01,true);assert.ok(Math.abs(r.time-41.99)<.0001);assert.equal(r.brilliance,3);assert.equal(r.coins,1);assert.ok(r.spin>0);});
+test('plazas widen and all booth positions rotate',()=>{const r=new Run();r.distance=150;r.update(.01,true);assert.equal(r.lanes,5);assert.equal(r.lane,2);const positions=new Set();for(let i=0;i<5;i++){r.plazaIndex=i;r.purple=(i*2+2)%5;positions.add(r.purple);}assert.equal(positions.size,5);});
+test('rank boundaries',()=>{for(const [m,label] of [[399,'IDEATION'],[400,'BUILD'],[999,'BUILD'],[1000,'STAGED'],[2000,'PRODUCTION'],[3000,'CLEARED FOR PRODUCTION']])assert.equal(rank(m),label);});
