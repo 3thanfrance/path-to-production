@@ -8,3 +8,17 @@ test('flow refunds are capped and the clock eventually ends',()=>{const r=new Ru
 test('hazards charge three seconds; coins and gems collect',()=>{const r=new Run();r.nextSpawn=1e9;r.objects=[{kind:'hazard',lane:1,z:0,type:0},{kind:'gem',lane:1,z:0},{kind:'coin',lane:1,z:0}];r.update(.01,true);assert.ok(Math.abs(r.time-41.99)<.0001);assert.equal(r.brilliance,3);assert.equal(r.coins,1);assert.ok(r.spin>0);});
 test('plazas widen and all booth positions rotate',()=>{const r=new Run();r.distance=150;r.update(.01,true);assert.equal(r.lanes,5);assert.equal(r.lane,2);const positions=new Set();for(let i=0;i<5;i++){r.plazaIndex=i;r.purple=(i*2+2)%5;positions.add(r.purple);}assert.equal(positions.size,5);});
 test('rank boundaries',()=>{for(const [m,label] of [[399,'IDEATION'],[400,'BUILD'],[999,'BUILD'],[1000,'STAGED'],[2000,'PRODUCTION'],[3000,'CLEARED FOR PRODUCTION']])assert.equal(rank(m),label);});
+
+test('the opening coin trail is collectible before the plaza, then one lane change reaches purple', () => {
+  const run = new Run();
+  while (run.lanes === 3 && !run.over) run.update(1 / 60, true);
+  assert.equal(run.coins, 5);
+  assert.equal(run.lane, 2);
+  assert.equal(run.purple, 3);
+  run.move(1);
+  while (!run.plazaIndex && !run.over) run.update(1 / 60, true);
+  assert.equal(run.plazaIndex, 1);
+  assert.equal(run.stop, 0);
+  assert.equal(run.tollLost, 0);
+  assert.ok(run.events.includes('toll'));
+});
