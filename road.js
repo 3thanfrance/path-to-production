@@ -10,11 +10,9 @@ const TRAFFIC = [
 
 const ATTRACT_TRAFFIC = [
   { kind: 'hazard', type: 0, lane: 0, z: 27 },
-  { kind: 'hazard', type: 1, lane: 4, z: 19 },
-  { kind: 'hazard', type: 3, lane: 2, z: 75 },
-  ...[4, 13, 24, 37, 51].map((z, index) => ({
-    kind: 'coin', lane: 1, offset: 0.54 - index * 0.1, z,
-  })),
+  { kind: 'hazard', type: 4, lane: 4, z: 19 },
+  { kind: 'hazard', type: 5, lane: 2, z: 75 },
+  {kind: 'guide', lane: 3, z: 46},
 ];
 
 export function createRoad(ctx) {
@@ -566,7 +564,7 @@ export function createRoad(ctx) {
   }
 
   function coupe(x, y, scale, paint, player, tilt, yaw = 0) {
-    drawSprite(player ? 'player' : 'coupe', () => paintCoupe(paint, player), x, y, scale, tilt, 1, yaw);
+    drawSprite(player ? 'player' : `coupe:${paint[0]}`, () => paintCoupe(paint, player), x, y, scale, tilt, 1, yaw);
   }
 
   function truck(x, y, scale, type, side, workTruck) {
@@ -588,9 +586,11 @@ export function createRoad(ctx) {
 
   function paintItem(object, now, cinematic, z, x, y, scale, vehicleScale, lane) {
     if (object.kind === 'hazard') {
-      if (object.type === 3) {
-        coupe(x, y, vehicleScale * .64, TRAFFIC[3].colors, false);
-        if (!cinematic && scale > .43) {
+      const bump = object.bump ? object.bump.force * Math.exp(-object.bump.age * 8) : 0;
+      if (object.type === 3 || object.type === 4) {
+        const colors = object.type === 3 ? TRAFFIC[3].colors : ['#79ffe7', '#22a88e', '#173a42'];
+        coupe(x, y, vehicleScale * (object.type === 4 ? .57 : .64), colors, false, bump * .13);
+        if (object.type === 3 && !cinematic && scale > .43) {
           ctx.font = 'bold 10px monospace';
           ctx.textAlign = 'center';
           ctx.fillStyle = '#e0f5ff';
@@ -598,7 +598,7 @@ export function createRoad(ctx) {
         }
       } else {
         const size = object.type === 2 ? .76 : 1.04;
-        truck(x, y, vehicleScale * (cinematic ? 1.24 : size), object.type, Math.sign(lane) || 1, object.workTruck);
+        truck(x, y, vehicleScale * (cinematic ? 1.24 : size), object.type === 5 ? 2 : object.type, Math.sign(lane) || 1, object.workTruck);
       }
       if (object.merge && (reducedMotion.matches || Math.floor(object.merge.elapsed * 5) % 2 === 0)) {
         const side = Math.sign(object.merge.to - object.lane);
@@ -610,14 +610,21 @@ export function createRoad(ctx) {
 
     const size = Math.min(width / 660, height / 530) * scale;
     const floatY = y - (19 + Math.sin(now * .005 + z / 10) * 3) * size;
-    if (object.kind === 'coin') {
-      const r = 12 * size;
-      ellipse(x, y, r * 1.3, r * .26, '#ffc4395c');
-      glow(x, floatY, r * 2, '#fffbb1', '#ffa409c9');
-      ellipse(x, floatY, r * .73, r, '#ff8b00');
-      ellipse(x, floatY, r * .56, r * .85, '#ffe95d');
-      ellipse(x, floatY, r * .42, r * .72, '#ffae07');
-      line(x, floatY - r * .47, x, floatY + r * .47, '#ffdf50', r * .13);
+    if (object.kind === 'guide') {
+      for (let i = 0; i < 3; i++) {
+        const py = y + i * size * 4;
+        line(x - 9 * size, py, x, py - 4 * size, '#74efff', Math.max(.8, size * 2));
+        line(x, py - 4 * size, x + 9 * size, py, '#74efff', Math.max(.8, size * 2));
+      }
+    } else if (object.kind === 'work') {
+      for (const side of [-1, 1]) {
+        box(x + side * 37 * size - 3 * size, y - 26 * size, 6 * size, 26 * size, 1, '#8e7e8e');
+        glow(x + side * 37 * size, y - 31 * size, 6 * size, '#fff3a5', '#ff930e');
+      }
+      box(x - 44 * size, y - 24 * size, 88 * size, 17 * size, 1, '#ff8c26', '#241328');
+      for (let i = -3; i <= 3; i++) {
+        line(x + i * 11 * size, y - 8 * size, x + (i * 11 + 7) * size, y - 22 * size, '#25172d', 4 * size);
+      }
     } else if (object.kind === 'boost' || object.kind === 'deadline') {
       const turbo = object.kind === 'boost';
       const r = 17 * size;
@@ -727,9 +734,17 @@ export function createRoad(ctx) {
           gradient(0, y, 0, tail, ['#ecffff', '#56deff', '#1468ff00']));
       }
     }
+    const impact = cinematic || reducedMotion.matches ? null : run.impact;
+    const kick = impact ? impact.force * Math.exp(-impact.age * 7) : 0;
+    for (let i = 0; kick > .025 && i < 14; i++) {
+      const age = impact.age;
+      const x = car.x + (Math.sin(i * 7.8) * age * 150 - impact.side * 29) * scale;
+      const y = car.y - (25 + age * (i % 6 + 1) * 22 - age * age * 140) * scale;
+      line(x, y, x + (i % 5 - 2) * 4 * scale, y + 8 * scale, '#ffbb50', Math.max(1, scale * kick * 4));
+    }
     coupe(car.x, car.y + rumble - (cinematic ? height * .022 : 0), scale,
       [BRAND.carOrange, '#ff691a', '#a82327'], true,
-      run.spin ? Math.sin(now * .025) * .28 : lean, yaw);
+      lean - (impact?.side ?? 0) * (kick * .22 + (run.wrecked ? .14 : 0)), yaw + kick * .18);
   }
 
   return { resize, draw };

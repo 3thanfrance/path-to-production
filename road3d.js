@@ -1,18 +1,18 @@
 import * as T from 'three';
 import { CHAINGUARD_OCTOPUS } from './chainguard.js';
-import { lanePosition, obstacleLane, TURBO_SPEED, MERGE_SIGNAL, MERGE_DURATION } from './engine.js';
+import { lanePosition, obstacleLane, ROAD_HALF, ROAD_DEPTH, TURBO_SPEED, MERGE_SIGNAL, MERGE_DURATION } from './engine.js';
 
 const LANE = 3.55;
-const HALF = LANE * 2.5;
-const DEPTH = .27;
+const HALF = ROAD_HALF;
+const DEPTH = ROAD_DEPTH;
 const LOOKAHEAD = 1250;
 const TAGS = ['TECHNICAL DEBT', 'LEGACY STACK', 'ONE-OFF BUILD', 'STATUS QUO'];
-const CARS = [0x9b4c27, 0x2157c1, 0x9e3274, 0x198dcc];
+const CARS = [0x9b4c27, 0x2157c1, 0x9e3274, 0x198dcc, 0x36b99d, 0x975de6];
 const attract = [
   { kind: 'hazard', type: 0, lane: 0, z: 35 },
-  { kind: 'hazard', type: 1, lane: 4, z: 42 },
-  { kind: 'hazard', type: 3, lane: 2, z: 74 },
-  ...[14, 27, 41, 56, 73].map(z => ({ kind: 'coin', lane: 3, z })),
+  { kind: 'hazard', type: 4, lane: 4, z: 42 },
+  { kind: 'hazard', type: 5, lane: 2, z: 74 },
+  {kind: 'guide', lane: 3, z: 46},
 ];
 
 export function createRoad3D(canvas) {
@@ -199,7 +199,7 @@ export function createRoad3D(canvas) {
       for (const z of [-1.31, 1.28]) {
         const hub = new T.Group();
         hub.position.set(x, .45, z);
-        body.add(hub);
+        root.add(hub);
         const axle = new T.Group();
         hub.add(axle);
         mesh(axle, wheelShape, tire, 0, 0, 0);
@@ -258,9 +258,54 @@ export function createRoad3D(canvas) {
     return group;
   }
 
-  const tokenMaterials = {coin: neon(0xffd34d), gem: neon(0xd676ff), boost: blue, deadline: neon(0x97ffb2)};
+  function compact(type) {
+    const van = type === 5;
+    const root = sportsCar(CARS[type]);
+    const body = root.userData.body;
+    const paint = material(CARS[type], .43);
+    root.scale.set(van ? .99 : .86, van ? 1.12 : .91, van ? 1.12 : .86);
+    if (van) {
+      box(body, paint, 0, 1.14, .42, 2.13, 1.33, 2.84);
+      box(body, glass, 0, 1.45, 1.87, 1.67, .40, .08);
+      box(body, ink, 0, 1.05, 1.88, .035, 1.05, .09);
+      box(body, chrome, 0, 1.82, .59, 1.51, .068, 2.20);
+      decal(body, 'NIGHT SHIFT', 0, .94, 1.90, 1.49, .26);
+    } else {
+      box(body, ink, 0, 1.15, 1.77, 1.94, .076, .34);
+      box(body, ink, 0, 1.005, 2.06, 1.91, .24, .10);
+      box(body, blue, 0, .999, 2.126, 1.42, .046, .03);
+    }
+    return root;
+  }
+
+  function roadwork() {
+    const root = new T.Group();
+    shadow(root, 3.2, 1.7);
+    for (const x of [-1.20, 1.20]) {
+      box(root, ink, x, .12, 0, .47, .24, .94);
+      box(root, chrome, x, .52, 0, .11, .78, .19);
+      box(root, amber, x, .94, 0, .17, .16, .18);
+    }
+    box(root, material(0x7d381d), 0, .56, 0, 2.95, .49, .34);
+    for (let i = -3; i <= 3; i++) {
+      box(root, i % 2 ? amber : ink, i * .38, .56, .19, .32, .38, .045).rotation.z = -.42;
+    }
+    decal(root, 'ROAD CLOSED', 0, .56, .23, 1.47, .29, '#fff4d1', '#351322');
+    return root;
+  }
+
+  function guide() {
+    const root = new T.Group();
+    for (const z of [-.85, 0, .85]) {
+      for (const side of [-1, 1]) {
+        box(root, blue, side * .20, .016, z, .48, .018, .067).rotation.y = side * .63;
+      }
+    }
+    return root;
+  }
+
+  const tokenMaterials = {gem: neon(0xd676ff), boost: blue, deadline: neon(0x97ffb2)};
   const tokenShapes = {
-    coin: new T.CylinderGeometry(.31, .31, .10, 18).rotateX(Math.PI / 2),
     gem: new T.OctahedronGeometry(.39),
     boost: new T.OctahedronGeometry(.36),
     deadline: new T.CylinderGeometry(.36, .36, .11, 18).rotateX(Math.PI / 2),
@@ -383,13 +428,16 @@ export function createRoad3D(canvas) {
   const reflectors = new T.InstancedMesh(cube, amber, markerCount * 2);
   const arrows = new T.InstancedMesh(new T.ConeGeometry(.20, .57, 3).rotateX(-Math.PI / 2), purple, 13);
   const exhaust = new T.InstancedMesh(cube, neon(0x73eaff), 28);
+  const debris = new T.InstancedMesh(cube, neon(0xffa844), 96);
+  const rubber = new T.InstancedMesh(cube, material(0x20182c, .98), 64);
+  const tireDust = new T.InstancedMesh(cube, material(0x695674, .98), 26);
   const dummy = new T.Object3D();
   for (const instances of [markings, posts, reflectors, arrows]) {
     instances.frustumCulled = false;
     instances.instanceMatrix.setUsage(T.DynamicDrawUsage);
     scene.add(instances);
   }
-  for (const instances of [exhaust]) {
+  for (const instances of [exhaust, debris, tireDust, rubber]) {
     instances.frustumCulled = false;
     instances.instanceMatrix.setUsage(T.DynamicDrawUsage);
     scene.add(instances);
@@ -481,6 +529,9 @@ export function createRoad3D(canvas) {
   const traffic = new Map();
   const pool = new Map();
   let chaseX = 0;
+  let rubberRun;
+  let lastTrack = -Infinity;
+  let tracks = [];
   let cameraFov = 55;
   let aspect = 1;
 
@@ -522,6 +573,9 @@ export function createRoad3D(canvas) {
   function draw(run, mode, distance, now, dt) {
     const intro = mode === 'intro';
     const inMotion = mode === 'play';
+    const impact = intro ? null : run.impact;
+    const kick = impact && !reducedMotion.matches ? impact.force * Math.exp(-impact.age * 7) : 0;
+    const wreck = !intro && run.wrecked ? Math.min(1, (impact?.age ?? 0) * 3) : 0;
     const steer = intro ? 0 : run.steering.position;
     const input = reducedMotion.matches ? 0 : T.MathUtils.clamp(run.steering.velocity / 2.6, -1, 1);
     const speed = inMotion ? run.speed / TURBO_SPEED : 0;
@@ -564,24 +618,23 @@ export function createRoad3D(canvas) {
     }
 
     const visible = new Set();
+    const freshWrecks = [];
     for (const item of intro ? attract : run.objects) {
       const relative = item.z - sceneDistance;
       if (relative > LOOKAHEAD || relative < -42 || (item.hit && item.kind !== 'hazard')) continue;
       visible.add(item);
       if (!traffic.has(item)) {
         const key = item.kind === 'hazard' ? 'hazard:' + item.type + (item.workTruck ? ':work' : '') : item.kind;
-        const model = pool.get(key)?.pop() ?? (item.kind !== 'hazard' ? pickup(item.kind)
-          : item.type === 3 ? sportsCar(CARS[3]) : truck(item.type, item.workTruck));
+        const model = pool.get(key)?.pop() ?? (
+          item.kind === 'work' ? roadwork() : item.kind === 'guide' ? guide() :
+          item.kind !== 'hazard' ? pickup(item.kind) : item.type < 3 ? truck(item.type, item.workTruck) :
+          item.type === 3 ? sportsCar(CARS[3]) : compact(item.type)
+        );
         traffic.set(item, {key, model});
         scene.add(model);
       }
       const {model} = traffic.get(item);
       model.position.set(obstacleLane(item) * HALF, 0, -relative * DEPTH);
-      const express = run.expressLaneAt(sceneDistance);
-      const yielding = !intro && item.kind === 'hazard' && express >= 0 &&
-        Math.abs(steer - lanePosition(express)) <= .16 &&
-        Math.abs(obstacleLane(item) - lanePosition(express)) <= .32;
-      model.scale.setScalar(yielding ? T.MathUtils.smoothstep(Math.abs(relative), 7, 30) : 1);
       if (item.kind === 'hazard') {
         model.userData.workLights?.forEach((lamp, index) => {
           lamp.visible = reducedMotion.matches || (Math.floor(now / 250) + index) % 2 === 0;
@@ -589,7 +642,15 @@ export function createRoad3D(canvas) {
         const merge = item.merge;
         const progress = merge ? (merge.elapsed - MERGE_SIGNAL) / MERGE_DURATION : 0;
         const turn = progress > 0 && progress < 1 ? Math.sin(progress * Math.PI) : 0;
-        model.rotation.y = merge ? -Math.sign(merge.to - item.lane) * turn * .18 : 0;
+        if (!reducedMotion.matches && item.wreck && item.bump?.age < .42) freshWrecks.push(item);
+        const bump = item.bump && !reducedMotion.matches ? item.bump.force * Math.exp(-item.bump.age * 7) : 0;
+        const steering = merge ? -Math.sign(merge.to - item.lane) * turn : 0;
+        model.rotation.y = steering * .18 + (item.bump?.side ?? 0) * (bump * .26 + (item.wreck ? .21 : 0));
+        model.rotation.z = steering * .048 + (item.wreck ? .10 : 0);
+        model.rotation.x = -bump * .13;
+        for (const wheel of model.userData.wheels ?? []) {
+          if (wheel.front) wheel.hub.rotation.y = steering * .25;
+        }
         const direction = merge ? Math.sign(merge.to - item.lane) : 0;
         if (direction && !model.userData.indicators) {
           model.userData.indicators = [-1, 1].map(side =>
@@ -618,6 +679,54 @@ export function createRoad3D(canvas) {
     }
 
     player.position.x = steer * HALF;
+    const side = impact?.side ?? 0;
+    const grip = Math.abs(input);
+    tireDust.count = inMotion && speed > .24 && grip > .13 && !reducedMotion.matches ? 26 : 0;
+    for (let i = 0; i < tireDust.count; i++) {
+      const age = (sceneDistance * .046 + i * .137) % 1;
+      const tire = i % 2 ? 1 : -1;
+      const size = (.055 + age * .09) * grip;
+      place(tireDust, i, player.position.x + tire * 1.06 - input * age * 1.14,
+        .035 + age * age * .21, 1.30 + age * 3.8, size, size * .60, size * 2.2);
+    }
+    tireDust.instanceMatrix.needsUpdate = true;
+    if (rubberRun !== run) {
+      rubberRun = run;
+      tracks = [];
+      lastTrack = -Infinity;
+    }
+    if (inMotion && sceneDistance - lastTrack > 2.7 && speed > .25 && (grip > .53 || kick > .15)) {
+      lastTrack = sceneDistance;
+      tracks.push({x: player.position.x, z: sceneDistance});
+    }
+    tracks = tracks.filter(track => sceneDistance - track.z < 80).slice(-32);
+    rubber.count = tracks.length * 2;
+    tracks.forEach((track, index) => {
+      for (const tire of [-1, 1]) {
+        place(rubber, index * 2 + (tire > 0 ? 1 : 0), track.x + tire * 1.06,
+          .012, 1.28 + (sceneDistance - track.z) * DEPTH, .13, .006, .65);
+      }
+    });
+    rubber.instanceMatrix.needsUpdate = true;
+    let debrisCount = kick > .015 ? (impact.fatal ? 44 : 24) : 0;
+    for (let i = 0; i < debrisCount; i++) {
+      const age = impact.age;
+      const spread = Math.sin(i * 8.17);
+      const size = Math.max(0, .052 - age * .065);
+      place(debris, i, player.position.x - side * .9 + spread * age * (4 + i % 7),
+        Math.max(.035, .38 + age * (i % 6 + 2) - age * age * 10),
+        -1.7 + age * (2 + i % 8), size, size, size * 2.5);
+    }
+    for (const item of freshWrecks) {
+      const age = item.bump.age;
+      for (let i = 0; i < 16 && debrisCount < 96; i++) {
+        place(debris, debrisCount++, obstacleLane(item) * HALF + Math.sin(i * 7.3) * age * 8,
+          Math.max(.045, .55 + age * (i % 5 + 1) - age * age * 10),
+          (sceneDistance - item.z) * DEPTH - 1.6 + age * (i % 7 - 2), .045, .045, .12);
+      }
+    }
+    debris.count = debrisCount;
+    debris.instanceMatrix.needsUpdate = true;
     exhaust.count = speed > .27 && !reducedMotion.matches ? (run.boost ? 28 : 12) : 0;
     for (let particle = 0; particle < exhaust.count; particle++) {
       const age = (sceneDistance * .055 + particle * .173) % 1;
@@ -630,11 +739,13 @@ export function createRoad3D(canvas) {
     exhaust.instanceMatrix.needsUpdate = true;
     const body = player.userData.body;
     body.position.y = reducedMotion.matches ? 0 : speed * (.025 * Math.sin(sceneDistance * .74) + .014 * Math.sin(sceneDistance * 1.3));
-    body.rotation.z = -input * .086;
-    body.rotation.y = -input * .19 + (run.spin && inMotion ? Math.sin(now * .026) * run.spin * .43 : 0);
-    body.rotation.x = reducedMotion.matches ? 0 : run.boost ? -.045 : speed * .016;
+    player.rotation.y = -input * .14 + side * (kick * .23 + wreck * .50);
+    body.rotation.y = 0;
+    body.rotation.z = -input * .12 - side * (kick * .11 + wreck * .13);
+    body.rotation.x = reducedMotion.matches ? 0 : (run.boost ? -.054 : speed * .016) + kick * .19 + wreck * .09;
+    body.position.y -= grip * .055 + kick * .070;
     for (const {hub, axle, front} of player.userData.wheels) {
-      hub.rotation.y = front ? -input * .29 : 0;
+      hub.rotation.y = front ? -input * .30 : 0;
       axle.rotation.x = -sceneDistance * DEPTH / .45;
     }
     jets.forEach((jet, i) => {
@@ -649,7 +760,7 @@ export function createRoad3D(canvas) {
     camera.fov = cameraFov;
     camera.updateProjectionMatrix();
     const cameraZ = tall ? (intro ? 15 : 12.5) : intro ? 11.6 : 8.8;
-    camera.position.set(chaseX, tall ? 5.1 : intro ? 4.35 : 3.95, cameraZ);
+    camera.position.set(chaseX + side * kick * .26, (tall ? 5.1 : intro ? 4.35 : 3.95) + kick * .12, cameraZ + kick * .32);
     camera.lookAt(chaseX * (tall ? .89 : .52) + input * .24, tall ? (intro ? .45 : 1.9) : intro ? .10 : 1.44, -21);
     renderer.render(scene, camera);
   }

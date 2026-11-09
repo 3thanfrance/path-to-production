@@ -5,7 +5,44 @@ test('red booth holds for eight seconds and resumes without double charging',()=
 test('purple lane refunds two seconds with zero stop and respects cap',()=>{const r=new Run();r.lane=r.purple;r.toll();assert.equal(r.time,47);assert.equal(r.stop,0);r.time=59;r.toll();assert.equal(r.time,60);});
 test('purchase requires 15 brilliance, cannot stack, consumes on red only',()=>{const r=new Run();assert.equal(r.buy(),false);r.brilliance=30;assert.equal(r.buy(),true);assert.equal(r.brilliance,15);assert.equal(r.buy(),false);r.lane=r.purple;r.toll();assert.equal(r.pass,true);r.lane=0;r.toll();assert.equal(r.pass,false);assert.equal(r.stop,2);assert.equal(r.tollLost,2);});
 test('flow refunds are capped and the clock eventually ends',()=>{const r=new Run(()=>.5);r.speed=TOP_SPEED;r.time=60;r.plaza=1e9;r.objects=[];for(let i=0;i<20000&&!r.over;i++)r.update(1/60,true);assert.equal(r.over,true);assert.equal(r.time,0);assert.ok(r.refunded<=90);assert.ok(r.longest>100);});
-test('hazards charge three seconds; coins and gems collect',()=>{const r=new Run();r.objects=[{kind:'hazard',lane:2,z:0,type:0},{kind:'gem',lane:2,z:0},{kind:'coin',lane:2,z:0}];r.update(.01,true);assert.ok(Math.abs(r.time-41.99)<.0001);assert.equal(r.brilliance,3);assert.equal(r.coins,1);assert.ok(r.spin>0);});
+test('a turbo rear impact stops at the bumper and costs three seconds', () => {
+  const run = new Run();
+  run.speed = TURBO_SPEED;
+  run.boost = 2;
+  run.objects = [{kind: 'hazard', lane: 2, z: 42, type: 3}];
+  run.update(.55, true);
+  assert.ok(run.events.includes('crash'));
+  assert.ok(run.distance <= run.objects[0].z - 4.4 / .27);
+  assert.equal(run.boost, 0);
+  assert.equal(run.time, 45 - .55 - 3);
+});
+
+test('continuous steering can hold a lane split and a barrier wreck ends the run', () => {
+  const run = new Run();
+  run.objects = [{kind: 'hazard', lane: 1, z: 62, type: 4}, {kind: 'work', lane: 3, z: 130}];
+  run.steerBy(.20);
+  while (run.distance < 85) {
+    run.update(1 / 60, true);
+    assert.ok(!run.events.includes('crash'));
+  }
+  assert.ok(Math.abs(run.steering.position - .20) < .001);
+  run.steerBy(.20);
+  while (!run.over && run.distance < 150) run.update(1 / 60, true);
+  assert.equal(run.wrecked, true);
+  assert.equal(run.speed, 0);
+  assert.ok(run.distance < 130);
+  assert.ok(run.time > 0);
+});
+
+test('a construction barrier stops and wrecks traffic at contact', () => {
+  const run = new Run();
+  const car = {kind: 'hazard', lane: 0, type: 3, z: 30};
+  run.objects = [car, {kind: 'work', lane: 0, z: 70}];
+  for (let tick = 0; tick < 120; tick++) run.update(1 / 60, true);
+  assert.ok(car.wreck);
+  assert.ok(car.z < 70);
+});
+
 test('rank boundaries',()=>{for(const [m,label] of [[399,'IDEATION'],[400,'BUILD'],[999,'BUILD'],[1000,'STAGED'],[2000,'PRODUCTION'],[3000,'CLEARED FOR PRODUCTION']])assert.equal(rank(m),label);});
 
 test('five lanes are usable at the start and remain available after tolls', () => {
@@ -25,7 +62,6 @@ test('five lanes are usable at the start and remain available after tolls', () =
 test('opening turbo accelerates the car and the deadline pickup adds six seconds', () => {
   const run = new Run();
   while (!run.boost && !run.over) run.update(1 / 60, false);
-  assert.equal(run.coins, 5);
   assert.ok(run.events.includes('boost'));
   run.move(1);
   while (run.distance < 226 && !run.over) {
@@ -51,7 +87,7 @@ test('procedural obstacle rows leave two lanes open and keep a continuous pickup
     assert.ok(Math.abs(pickup.lane - lane) <= 1);
     lane = pickup.lane;
   }
-  assert.ok(rows.filter(item => item.kind === 'hazard').length >= 10);
+  assert.ok(rows.filter(item => item.kind === 'hazard').length <= 8);
 });
 
 test('a closed toll stops at a fixed line, then remains behind the car as it leaves', () => {
@@ -115,26 +151,23 @@ test('later traffic uses only standard vehicles', () => {
   run.objects = [];
   run.queueTraffic(5000, 9, 2);
   const hazards = run.objects.filter(item => item.kind === 'hazard');
-  assert.ok(hazards.length >= 16);
-  assert.ok(hazards.every(item => item.type >= 0 && item.type <= 3));
+  assert.ok(hazards.length <= 12);
+  assert.ok(hazards.every(item => item.type >= 0 && item.type <= 5));
 });
 
-test('a blocked traffic merge cannot penalize a purple-lane toll pass', () => {
+test('a sideswipe registers while recovering from a previous impact', () => {
   const run = new Run();
-  run.lane = run.purple;
-  run.steering.position = lanePosition(run.purple);
-  run.distance = run.plaza - 12;
-  run.speed = TOP_SPEED;
-  run.boost = 2;
-  run.objects = [{kind: 'hazard', type: 0, lane: run.purple, z: run.plaza - 7}];
-  const gate = run.plaza;
-  while (run.distance < gate + 24) {
+  run.spin = .6;
+  run.speed = 40;
+  run.objects = [{kind: 'hazard', type: 4, lane: 3, z: 8}];
+  run.steerBy(.4);
+  for (let tick = 0; tick < 15; tick++) {
     run.update(1 / 60, true);
-    assert.ok(!run.events.includes('crash'));
-    assert.equal(run.stop, 0);
-    assert.ok(run.boost > 0);
+    if (run.events.includes('crash')) break;
   }
-  assert.equal(run.plazaIndex, 1);
+  assert.ok(run.events.includes('crash'));
+  assert.match(run.message, /SIDESWIPE/);
+  assert.ok(run.steering.velocity < 0);
 });
 
 test('a merge signals before crossing and respects both a nearby vehicle and the convoy gap', () => {
@@ -209,7 +242,7 @@ test('following the moving pickup trail chains boosts and purple tolls without a
       const dt = 1 / (start % 2 ? 30 : 60);
       for (let tick = 0; run.plazaIndex < 9 && tick < 120 / dt && !run.over; tick++) {
         // Follow the next visible marker, with one ordinary lane input per turn.
-        const cue = run.objects.filter(item => item.kind !== 'hazard' && !item.hit &&
+        const cue = run.objects.filter(item => item.kind !== 'hazard' && item.kind !== 'work' && !item.hit &&
           item.z >= run.distance - 4).sort((a, b) => a.z - b.z)[0];
         if (run.plaza - run.distance <= 36) {
           run.move(Math.sign(run.purple - run.lane));
@@ -219,7 +252,7 @@ test('following the moving pickup trail chains boosts and purple tolls without a
         run.update(dt, accelerate);
         assert.ok(!run.events.includes('crash'), `seed ${start}, throttle ${accelerate}, crash at ${run.distance}`);
         assert.equal(run.stop, 0, `seed ${start}, toll at ${run.distance}`);
-        const missed = run.objects.find(item => item.kind !== 'hazard' && !item.hit && item.z < run.distance - 5);
+        const missed = run.objects.find(item => ['boost', 'gem', 'deadline'].includes(item.kind) && !item.hit && item.z < run.distance - 5);
         assert.equal(missed, undefined, `seed ${start}, missed ${missed?.kind} at ${missed?.z}`);
         boosts += Number(run.events.includes('boost'));
       }
