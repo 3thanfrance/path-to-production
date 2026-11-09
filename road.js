@@ -19,6 +19,9 @@ const ATTRACT_TRAFFIC = [
 export function createRoad(ctx) {
   let width, height, horizon, center, roadHalf, sky;
   const focalDistance = 94;
+  const drawDistance = 1250;
+  let cameraOffset = 0;
+  let cameraLane = 0;
   const sprites = new Map();
   const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
 
@@ -71,7 +74,7 @@ export function createRoad(ctx) {
 
   function project(depth, lane = 0) {
     const scale = focalDistance / (focalDistance + depth);
-    return { x: center + roadHalf * lane * scale, y: horizon + (height * .89 - horizon) * scale, scale };
+    return { x: center + (roadHalf * lane - cameraOffset) * scale, y: horizon + (height * .89 - horizon) * scale, scale };
   }
 
   function palm(x, y, size, lean) {
@@ -184,8 +187,8 @@ export function createRoad(ctx) {
       line(0, y, width, y, '#9f22eb90', Math.max(.65, scale * 1.5));
     }
 
-    const left = center - roadHalf * end.scale;
-    const right = center + roadHalf * end.scale;
+    const left = project(-focalDistance * .23, -1).x;
+    const right = project(-focalDistance * .23, 1).x;
     shape([[center, horizon], [right, end.y], [left, end.y]], gradient(0, horizon, 0, height,
       ['#6c275d', '#29298c', '#121e66', '#071333']));
     for (const side of [-1, 1]) {
@@ -213,10 +216,20 @@ export function createRoad(ctx) {
       const close = project(z, lane);
       line(far.x, far.y, close.x, close.y, '#a79bff30', close.scale * 1.3);
     }
+    // Fixed shoulder reflectors provide a steady near-field speed reference.
+    for (let z = -20 - distance % 24; z < 500; z += 24) {
+      if (z < -24) continue;
+      for (const side of [-1, 1]) {
+        const p = project(z, side * 1.015);
+        const height = 13 * p.scale;
+        line(p.x, p.y, p.x, p.y - height, '#35215e', 4 * p.scale);
+        line(p.x, p.y - height, p.x, p.y - height * .72, '#ffd2ff', 3 * p.scale);
+      }
+    }
     for (let divider = 0; divider < 4; divider++) {
       const side = divider < 2 ? -1 : 1;
       const outer = divider === 0 || divider === 3;
-      for (let depth = -24 - distance % 18; depth < 500; depth += 18) {
+      for (let depth = -24 - distance % 18; depth < drawDistance; depth += 18) {
         if (depth + 9 < -24) continue;
         const lane = side * (outer ? .6 : .2);
         const start = project(Math.max(-24, depth), lane);
@@ -285,7 +298,7 @@ export function createRoad(ctx) {
     const unit = roadHalf * 2 * p.scale / 5;
     const tall = Math.min(unit * 1.32, height * .34 * p.scale + unit * .44);
     if (unit < 6) return;
-    const exit = center + (openLane - 2) * unit;
+    const exit = p.x + (openLane - 2) * unit;
     shape([[exit - unit * .29, p.y], [exit + unit * .29, p.y],
       [exit + unit * .55, p.y + tall * .55], [exit - unit * .55, p.y + tall * .55]],
       gradient(0, p.y, 0, p.y + tall * .55, ['#b745ff86', '#8228ff00']));
@@ -297,9 +310,9 @@ export function createRoad(ctx) {
         line(x - unit * .36, stop.y, x + unit * .36, stop.y, '#ff976ca6', unit * .023);
       }
     }
-    sign(center + unit * 1.52, p.y - tall * 1.13, unit / 103);
+    sign(p.x + unit * 1.52, p.y - tall * 1.13, unit / 103);
     for (let lane = 0; lane <= 5; lane++) {
-      const x = center + (lane - 2.5) * unit;
+      const x = p.x + (lane - 2.5) * unit;
       ellipse(x + unit * .045, p.y + tall * .027, unit * .29, tall * .083, '#08051f9c');
       ellipse(x, p.y, unit * .19, tall * .061, '#b27de3');
       ellipse(x, p.y - tall * .023, unit * .18, tall * .04, '#403070');
@@ -326,7 +339,7 @@ export function createRoad(ctx) {
       line(x - unit * .17, p.y, x + unit * .17, p.y, '#ffc6ff', Math.max(1, unit * .022));
     }
     for (let lane = 0; lane < 5; lane++) {
-      const x = center + (lane - 2) * unit;
+      const x = p.x + (lane - 2) * unit;
       const open = lane === openLane;
       const roofY = p.y - tall;
       const neon = open ? BRAND.chainguardPurple : '#ff492b';
@@ -566,7 +579,7 @@ export function createRoad(ctx) {
   }
 
   // Paint each vehicle once at sprite resolution, then composite it at road depth.
-  function drawSprite(key, painter, x, y, scale, tilt = 0) {
+  function drawSprite(key, painter, x, y, scale, tilt = 0, widthScale = 1, yaw = 0) {
     if (!sprites.has(key)) {
       const sprite = document.createElement('canvas');
       sprite.width = 420;
@@ -581,24 +594,33 @@ export function createRoad(ctx) {
     ctx.save();
     ctx.translate(x, y);
     ctx.rotate(tilt);
+    ctx.transform(widthScale, 0, yaw, 1, 0, 0);
     ctx.drawImage(sprites.get(key), -105 * scale, -122 * scale, 210 * scale, 140 * scale);
     ctx.restore();
   }
 
-  function coupe(x, y, scale, paint, player, tilt) {
-    drawSprite(player ? 'player' : 'coupe', () => paintCoupe(paint, player), x, y, scale, tilt);
+  function coupe(x, y, scale, paint, player, tilt, yaw = 0) {
+    drawSprite(player ? 'player' : 'coupe', () => paintCoupe(paint, player), x, y, scale, tilt, 1, yaw);
   }
 
   function truck(x, y, scale, type, side) {
-    drawSprite(`truck:${type}:${side}`, () => paintTruck(type, side), x, y, scale);
+    drawSprite(`truck:${type}:${side}`, () => paintTruck(type, side), x, y, scale, 0, .84);
   }
 
   function item(object, distance, now, cinematic) {
     const z = object.z - distance;
-    if (z < -36 || z > 450 || (object.hit && object.kind !== 'hazard')) return;
+    if (z < -36 || z > drawDistance || (object.hit && object.kind !== 'hazard')) return;
     const lane = object.offset ?? obstacleLane(object);
     const { x, y, scale } = project(z, lane);
-    const vehicleScale = Math.min(width / 700, height / 570) * scale;
+    const vehicleScale = Math.min(width / 820, height / 570) * scale;
+    const fade = Math.max(0, Math.min(1, (drawDistance - z) / 330));
+    ctx.save();
+    ctx.globalAlpha *= fade;
+    paintItem(object, now, cinematic, z, x, y, scale, vehicleScale, lane);
+    ctx.restore();
+  }
+
+  function paintItem(object, now, cinematic, z, x, y, scale, vehicleScale, lane) {
     if (object.kind === 'hazard') {
       if (object.type === 3) {
         coupe(x, y, vehicleScale * .64, TRAFFIC[3].colors, false);
@@ -672,7 +694,7 @@ export function createRoad(ctx) {
     }
   }
 
-  function draw(run, mode, distance, visualLane, now) {
+  function draw(run, mode, distance, now, dt) {
     const cinematic = mode === 'intro';
     const remaining = run.plaza - run.distance;
     const approach = !cinematic && !run.stop
@@ -681,6 +703,11 @@ export function createRoad(ctx) {
     const rush = cinematic || run.stop ? 0 : Math.min(1,
       velocity * .22 + approach * velocity * .5 + (run.boost ? .6 : 0));
     roadHalf = width * (cinematic ? .61 : .465);
+    const visualLane = cinematic ? 0 : run.steering.position;
+    const steeringForce = cinematic ? 0 : Math.max(-1, Math.min(1, run.steering.velocity / 2.6));
+    const targetCamera = reducedMotion.matches ? 0 : visualLane + steeringForce * .10;
+    cameraLane += (targetCamera - cameraLane) * (1 - Math.exp(-7 * dt));
+    cameraOffset = cinematic ? 0 : cameraLane * width * .077;
     const gates = cinematic ? [{ z: 83, purple: 3 }] : [
       { z: run.plaza, purple: run.purple },
       ...(run.passedPlaza ? [run.passedPlaza] : []),
@@ -697,7 +724,7 @@ export function createRoad(ctx) {
 
     for (const { z, gate, object } of scene) {
       const depth = z - objectDistance;
-      if (gate && depth > -65 && depth < 520) {
+      if (gate && depth > -65 && depth < drawDistance) {
         const release = gate.duration
           ? Math.max(0, Math.min(1, (gate.waited - gate.duration + .65) / .65))
           : 0;
@@ -708,8 +735,20 @@ export function createRoad(ctx) {
     }
     const car = project(0, cinematic ? 0 : visualLane);
     const scale = Math.min(width / 685, height / 520);
-    const lean = (lanePosition(run.lane) - visualLane) * .18;
-    const rumble = reducedMotion.matches ? 0 : Math.sin(distance * .8) * rush * 1.3;
+    const lean = reducedMotion.matches ? 0 : steeringForce * .085;
+    const yaw = reducedMotion.matches ? 0 : -steeringForce * .19;
+    if (!cinematic && Math.abs(steeringForce) > .10 && run.speed > 18 && !reducedMotion.matches) {
+      for (const side of [-1, 1]) {
+        const tire = car.x + side * 55 * scale;
+        const tailX = tire - steeringForce * 25 * scale;
+        const tailY = car.y + 22 * scale;
+        line(tire, car.y - 1, tailX, tailY, '#03051a80', 4 * scale);
+        line(tire, car.y - 1, tailX, tailY, '#ae70ef55', 1.2 * scale);
+      }
+    }
+    const suspension = reducedMotion.matches || cinematic || run.stop ? 0
+      : (Math.sin(distance * .27) * .8 + Math.sin(distance * .63) * .38) * velocity;
+    const rumble = suspension - Math.abs(steeringForce) * 1.35;
     if (run.boost && !cinematic && !reducedMotion.matches) {
       for (const side of [-1, 1]) {
         const x = car.x + side * 45 * scale;
@@ -721,7 +760,7 @@ export function createRoad(ctx) {
     }
     coupe(car.x, car.y + rumble - (cinematic ? height * .022 : 0), scale,
       [BRAND.carOrange, '#ff691a', '#a82327'], true,
-      run.spin ? Math.sin(now * .025) * .28 : lean);
+      run.spin ? Math.sin(now * .025) * .28 : lean, yaw);
   }
 
   return { resize, draw };

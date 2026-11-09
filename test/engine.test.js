@@ -42,9 +42,8 @@ test('opening turbo accelerates the car and the deadline pickup adds six seconds
 test('procedural obstacle rows leave two lanes open and keep a continuous pickup route', () => {
   const run = new Run(() => .63);
   const previous = run.plaza;
-  run.passPlaza();
   const rows = run.objects.filter(item => item.z > previous);
-  let lane = run.lane;
+  let lane = run.purple;
   for (const pickup of rows.filter(item => item.kind !== 'hazard' && rows.some(h => h.kind === 'hazard' && h.z === item.z))) {
     const blockers = rows.filter(item => item.kind === 'hazard' && item.z === pickup.z);
     assert.ok(blockers.length <= 3);
@@ -78,4 +77,32 @@ test('fixed hazards keep their world position while traffic advances at its own 
   assert.equal(run.objects[0].z, 100);
   assert.equal(run.objects[1].z, 124);
   assert.notEqual(run.distance, 24);
+});
+
+
+test('post-toll traffic is already present before crossing and stays inside its lane', () => {
+  const run = new Run(() => .63);
+  const gate = run.plaza;
+  const firstObstacle = run.objects.find(item => item.kind === 'hazard' && item.z > gate);
+  assert.ok(firstObstacle);
+  const initialCount = run.objects.filter(item => item.z > gate && item.z < gate + 620).length;
+  run.move(1);
+  while (!run.plazaIndex && !run.over) run.update(1 / 60, true);
+  assert.equal(run.stop, 0);
+  assert.ok(run.objects.includes(firstObstacle));
+  assert.equal(run.objects.filter(item => item.z > gate && item.z < gate + 620).length, initialCount);
+});
+
+test('steering builds lateral speed before settling and follows the same path across frame rates', () => {
+  const runs = [60, 120].map(rate => {
+    const run = new Run(() => .4);
+    run.move(1);
+    run.update(1 / rate, false);
+    assert.ok(run.steering.position > 0 && run.steering.position < .1);
+    assert.ok(run.steering.velocity > 0);
+    for (let i = 1; i < rate / 2; i++) run.update(1 / rate, false);
+    assert.ok(Math.abs(run.steering.position - .4) < .002);
+    return run;
+  });
+  assert.ok(Math.abs(runs[0].steering.position - runs[1].steering.position) < 1e-6);
 });

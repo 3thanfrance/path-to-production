@@ -14,17 +14,23 @@ const HAZARD_SPEEDS = [24, 29, 34, 41, 0, 0];
 
 export const lanePosition = (lane, lanes = LANE_COUNT) => (2 * lane + 1) / lanes - 1;
 
-export function obstacleLane(object) {
-  const base = lanePosition(object.lane);
-  if (object.kind !== 'hazard' || !HAZARD_SPEEDS[object.type] || object.exitStart == null) return base;
-  const ramp = Math.max(0, Math.min(1, (object.z - object.exitStart) / 65));
-  return base + (object.lane < 2 ? -1 : 1) * ramp * 1.35;
+export const obstacleLane = object => lanePosition(object.lane);
+
+export function stepSteering(position, velocity, target, dt) {
+  const response = 17;
+  const error = position - target;
+  const momentum = velocity + response * error;
+  const decay = Math.exp(-response * dt);
+  return {
+    position: target + (error + momentum * dt) * decay,
+    velocity: (velocity - response * momentum * dt) * decay,
+  };
 }
 
 function openingTraffic() {
   return [
-    { kind: 'hazard', type: 0, lane: 0, z: 85, exitStart: 338 },
-    { kind: 'hazard', type: 1, lane: 4, z: 96, exitStart: 338 },
+    { kind: 'hazard', type: 0, lane: 0, z: 85, stopAt: FIRST_PLAZA - 55 },
+    { kind: 'hazard', type: 1, lane: 4, z: 96, stopAt: FIRST_PLAZA - 55 },
     ...[32, 47, 62, 77, 92].map(z => ({ kind: 'coin', lane: 2, z })),
     { kind: 'boost', lane: 2, z: 115 },
     { kind: 'hazard', type: 4, lane: 1, z: 172 },
@@ -47,6 +53,7 @@ export class Run {
     this.distance = 0;
     this.speed = 0;
     this.lane = 2;
+    this.steering = { position: 0, velocity: 0 };
     this.brilliance = 0;
     this.coins = 0;
     this.pass = false;
@@ -68,6 +75,7 @@ export class Run {
     this.spin = 0;
     this.boost = 0;
     this.events = [];
+    this.queueTraffic(FIRST_PLAZA, 1, this.purple);
   }
 
   move(direction) {
@@ -92,8 +100,8 @@ export class Run {
     return Math.max(0, added);
   }
 
-  toll() {
-    if (this.lane === this.purple) {
+  toll(contactLane = this.lane) {
+    if (contactLane === this.purple) {
       const added = this.addTime(2);
       this.notify(added ? `TOLL PRE-PAID  +${Math.ceil(added)}s` : 'TOLL PRE-PAID · CLOCK FULL');
       this.events.push('toll');
@@ -109,10 +117,10 @@ export class Run {
     this.events.push('stop');
   }
 
-  queueTraffic(previousGate) {
+  queueTraffic(previousGate, stretch, entryLane) {
     // Reserve a neighboring lane on each row so a player can weave through it.
     // Moving rows use one speed. Static rows stay far enough apart for turbo.
-    let route = this.lane;
+    let route = entryLane;
     for (let row = 0; row < 5; row++) {
       const z = previousGate + 103 + row * 86 + Math.floor(this.random() * 12);
       const candidates = [route - 1, route, route + 1].filter(lane => lane >= 0 && lane < LANE_COUNT);
@@ -126,18 +134,19 @@ export class Run {
         this.objects.push({
           kind: 'hazard', lane, z,
           type: moving ? type : 4 + Math.floor(this.random() * 2),
-          exitStart: this.plaza - 130,
+          stopAt: previousGate + PLAZA_SPACING - 55,
         });
       }
-      const pickup = row === 1 ? 'boost' : row === 3 && this.plazaIndex % 2 === 1 ? 'deadline' : row === 2 ? 'gem' : 'coin';
+      const pickup = row === 1 ? 'boost' : row === 3 && stretch % 2 === 1 ? 'deadline' : row === 2 ? 'gem' : 'coin';
       this.objects.push({ kind: pickup, lane: route, z });
       if (pickup === 'coin') this.objects.push({ kind: 'coin', lane: route, z: z + 15 });
     }
   }
 
-  passPlaza() {
+  passPlaza(contactLane = this.lane) {
     const gate = this.plaza;
-    this.toll();
+    this.toll(contactLane);
+    if (this.stop) this.lane = contactLane;
     this.passedPlaza = {
       z: gate, purple: this.purple, stoppedLane: this.stop ? this.lane : -1,
       duration: this.stop, waited: 0,
@@ -146,7 +155,7 @@ export class Run {
     this.plazaIndex++;
     this.purple = (this.purple + 1 + Math.floor(this.random() * 4)) % LANE_COUNT;
     this.warned = false;
-    this.queueTraffic(gate);
+    this.queueTraffic(this.plaza, this.plazaIndex + 1, this.purple);
   }
 
   collect(object) {
@@ -199,6 +208,7 @@ export class Run {
     this.stop = Math.max(0, this.stop - dt);
     if (this.stop < 1e-9) this.stop = 0;
     const before = this.distance;
+    if (!held) this.steering = stepSteering(this.steering.position, this.steering.velocity, lanePosition(this.lane), dt);
     if (held) {
       this.flow = 0;
       this.speed = 0;
@@ -217,10 +227,12 @@ export class Run {
         this.warned = true;
         if (!this.messageTime) this.notify('TOLL AHEAD · FIND PURPLE', 1.7);
       }
-      const stopLine = this.plaza - (this.lane === this.purple ? 0 : 12);
+      const contactLane = Math.max(0, Math.min(LANE_COUNT - 1,
+        Math.round(((this.steering.position + 1) * LANE_COUNT - 1) / 2)));
+      const stopLine = this.plaza - (contactLane === this.purple ? 0 : 12);
       if (this.distance >= stopLine) {
         this.distance = stopLine;
-        this.passPlaza();
+        this.passPlaza(contactLane);
       }
       if (this.passedPlaza && this.distance > this.passedPlaza.z + 65) this.passedPlaza = null;
       if (before < PRODUCTION_DISTANCE && this.distance >= PRODUCTION_DISTANCE) {
@@ -228,13 +240,18 @@ export class Run {
       }
     }
 
-    const playerLane = lanePosition(this.lane);
+    const playerLane = this.steering.position;
     for (const object of this.objects) {
-      if (object.kind === 'hazard') object.z += dt * (HAZARD_SPEEDS[object.type] ?? 0);
+      if (object.kind === 'hazard') {
+        const speed = HAZARD_SPEEDS[object.type] ?? 0;
+        const room = (object.stopAt ?? Infinity) - object.z;
+        const activity = Math.max(0, Math.min(1, (1050 - object.z + this.distance) / 200));
+        object.z += dt * Math.min(speed, Math.max(0, room) * .6) * activity;
+      }
       if (held || this.stop || object.hit || object.z < before - 4 || object.z > this.distance + 4) continue;
       if (Math.abs(obstacleLane(object) - playerLane) <= .18) this.collect(object);
     }
-    this.objects = this.objects.filter(object => object.z > this.distance - 45 && Math.abs(obstacleLane(object)) < 1.6);
+    this.objects = this.objects.filter(object => object.z > this.distance - 45 );
     if (this.time <= 0) {
       this.time = 0;
       this.over = true;
