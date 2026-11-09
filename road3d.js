@@ -529,6 +529,7 @@ export function createRoad3D(canvas) {
   const traffic = new Map();
   const pool = new Map();
   let chaseX = 0;
+  let tireLoad = 0;
   let rubberRun;
   let lastTrack = -Infinity;
   let tracks = [];
@@ -680,8 +681,9 @@ export function createRoad3D(canvas) {
 
     player.position.x = steer * HALF;
     const side = impact?.side ?? 0;
-    const grip = Math.abs(input);
-    tireDust.count = inMotion && speed > .24 && grip > .13 && !reducedMotion.matches ? 26 : 0;
+    tireLoad += (input - tireLoad) * (1 - Math.exp(-8 * dt));
+    const grip = Math.abs(tireLoad);
+    tireDust.count = inMotion && speed > .24 && grip > .25 && !reducedMotion.matches ? 26 : 0;
     for (let i = 0; i < tireDust.count; i++) {
       const age = (sceneDistance * .046 + i * .137) % 1;
       const tire = i % 2 ? 1 : -1;
@@ -739,13 +741,13 @@ export function createRoad3D(canvas) {
     exhaust.instanceMatrix.needsUpdate = true;
     const body = player.userData.body;
     body.position.y = reducedMotion.matches ? 0 : speed * (.025 * Math.sin(sceneDistance * .74) + .014 * Math.sin(sceneDistance * 1.3));
-    player.rotation.y = -input * .14 + side * (kick * .23 + wreck * .50);
+    player.rotation.y = -tireLoad * .14 + side * (kick * .23 + wreck * .50);
     body.rotation.y = 0;
-    body.rotation.z = -input * .12 - side * (kick * .11 + wreck * .13);
+    body.rotation.z = -tireLoad * .14 - side * (kick * .11 + wreck * .13);
     body.rotation.x = reducedMotion.matches ? 0 : (run.boost ? -.054 : speed * .016) + kick * .19 + wreck * .09;
     body.position.y -= grip * .055 + kick * .070;
     for (const {hub, axle, front} of player.userData.wheels) {
-      hub.rotation.y = front ? -input * .30 : 0;
+      hub.rotation.y = front ? -(input * .24 + (input - tireLoad) * .20) : 0;
       axle.rotation.x = -sceneDistance * DEPTH / .45;
     }
     jets.forEach((jet, i) => {

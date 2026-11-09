@@ -69,8 +69,10 @@ export function obstacleLane(object) {
   return from;
 }
 
-export function stepSteering(position, velocity, target, dt) {
-  const response = 17;
+const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+const laneAt = position => clamp(Math.round(((position + 1) * LANE_COUNT - 1) / 2), 0, LANE_COUNT - 1);
+
+export function stepSteering(position, velocity, target, dt, response = 17) {
   const error = position - target;
   const momentum = velocity + response * error;
   const decay = Math.exp(-response * dt);
@@ -109,6 +111,7 @@ export class Run {
     this.steering = { position: 0, velocity: 0 };
     this.brilliance = 0;
     this.steerTarget = null;
+    this.tollGuideLane = null;
     this.impact = null;
     this.contacts = new Set();
     this.wrecked = false;
@@ -145,6 +148,29 @@ export class Run {
     if (this.stop || this.over) return;
     const target = this.steerTarget ?? this.steering.position;
     this.steerTarget = Math.max(-ROAD_EDGE, Math.min(ROAD_EDGE, target + delta));
+  }
+
+  steerWithKeys(direction, held, dt) {
+    const speed = clamp(this.speed / TURBO_SPEED, 0, 1);
+    const ramp = clamp(held / .18, 0, 1);
+    const rate = (.52 + 1.65 * ramp) * (1 - speed * .27);
+    this.steerBy(direction * rate * dt);
+  }
+
+  guidedSteering(target) {
+    const ahead = this.plaza - this.distance;
+    const behind = this.passedPlaza ? this.distance - this.passedPlaza.z : Infinity;
+    const blend = Math.max(clamp((105 - ahead) / 60, 0, 1), clamp((30 - behind) / 22, 0, 1));
+    if (!blend || this.steerTarget === null) {
+      this.tollGuideLane = null;
+      return target;
+    }
+    // Keep the selected lane stable near the divider, while a deliberate turn can change it.
+    if (this.tollGuideLane === null ||
+        Math.abs(target - lanePosition(this.tollGuideLane)) > .23) {
+      this.tollGuideLane = laneAt(target);
+    }
+    return target + (lanePosition(this.tollGuideLane) - target) * blend * blend * (3 - 2 * blend);
   }
 
   buy() {
@@ -256,8 +282,10 @@ export class Run {
   passPlaza(contactLane = this.lane) {
     const gate = this.plaza;
     this.toll(contactLane);
+    this.lane = contactLane;
+    this.tollGuideLane = contactLane;
+    if (this.steerTarget !== null) this.steerTarget = lanePosition(contactLane);
     if (this.stop) {
-      this.lane = contactLane;
       this.steerTarget = null;
       this.steering = {position: lanePosition(contactLane), velocity: 0};
     }
@@ -448,7 +476,9 @@ export class Run {
     const solids = this.objects.filter(item => item.kind === 'hazard' || item.kind === 'work');
     const starts = new Map(solids.map(item => [item, {x: obstacleLane(item), z: item.z}]));
     if (!held) {
-      this.steering = stepSteering(start.x, this.steering.velocity, this.steerTarget ?? lanePosition(this.lane), dt);
+      const target = this.guidedSteering(this.steerTarget ?? lanePosition(this.lane));
+      const response = this.steerTarget === null ? 17 : 16 - 2 * clamp(this.speed / TURBO_SPEED, 0, 1);
+      this.steering = stepSteering(start.x, this.steering.velocity, target, dt, response);
       this.steering.position = Math.max(-ROAD_EDGE, Math.min(ROAD_EDGE, this.steering.position));
     }
     let gateLane = null;
@@ -470,8 +500,7 @@ export class Run {
         this.warned = true;
         if (!this.messageTime) this.notify('TOLL AHEAD · FIND PURPLE', 1.7);
       }
-      const contactLane = Math.max(0, Math.min(LANE_COUNT - 1,
-        Math.round(((this.steering.position + 1) * LANE_COUNT - 1) / 2)));
+      const contactLane = laneAt(this.steering.position);
       const stopLine = this.plaza - (contactLane === this.purple ? 0 : 12);
       if (this.distance >= stopLine) {
         this.distance = stopLine;

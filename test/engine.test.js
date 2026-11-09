@@ -261,3 +261,49 @@ test('following the moving pickup trail chains boosts and purple tolls without a
     }
   }
 });
+
+test('full-speed steering allows small corrections, sustained turns and shoulder recovery', () => {
+  const run = new Run();
+  run.objects = [];
+  run.speed = TURBO_SPEED;
+  run.boost = 3;
+  const dt = 1 / 60;
+  run.steerBy(.035);
+  for (let tick = 0; tick < 18; tick++) run.update(dt, true);
+  assert.ok(run.steering.position > .025 && run.steering.position < .045);
+
+  for (let tick = 0; tick < 17; tick++) {
+    run.steerWithKeys(1, tick * dt, dt);
+    run.update(dt, true);
+  }
+  for (let tick = 0; tick < 16; tick++) run.update(dt, true);
+  assert.ok(run.steering.position > .28 && run.steering.position < .42);
+
+  run.steerBy(-4);
+  for (let tick = 0; tick < 38; tick++) run.update(dt, true);
+  assert.ok(run.steering.position > -.861 && run.steering.position < -.82);
+  run.steerBy(.10);
+  for (let tick = 0; tick < 20; tick++) run.update(dt, true);
+  assert.ok(run.steering.position > -.80);
+  assert.ok(!run.wrecked);
+});
+
+test('toll assist centers the selected lane and yields to a deliberate lane change', () => {
+  for (const turn of [false, true]) {
+    const run = new Run();
+    run.objects = [];
+    run.distance = run.plaza - 78;
+    run.speed = TURBO_SPEED;
+    run.boost = 2;
+    run.steering.position = turn ? 0 : .51;
+    run.steerBy(.005);
+    const dt = 1 / 60;
+    for (let tick = 0; !run.plazaIndex && tick < 70; tick++) {
+      if (turn && tick < 22) run.steerWithKeys(1, tick * dt, dt);
+      run.update(dt, true);
+    }
+    assert.equal(run.plazaIndex, 1);
+    assert.equal(run.stop, 0);
+    assert.ok(Math.abs(run.steering.position - lanePosition(3)) < .035);
+  }
+});
