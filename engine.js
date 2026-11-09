@@ -47,7 +47,8 @@ function openingTraffic() {
     { kind: 'hazard', type: 2, lane: 1, z: 172 },
     { kind: 'hazard', type: 3, lane: 4, z: 178 },
     { kind: 'deadline', lane: 3, z: 230 },
-    { kind: 'gem', lane: 2, z: 263 },
+    { kind: 'gem', lane: 3, z: 263 },
+    ...[341, 390, 440].map(z => ({ kind: 'coin', lane: 3, z })),
     { kind: 'hazard', type: 1, lane: 0, z: 290 },
     { kind: 'hazard', type: 2, lane: 1, z: 304 },
     { kind: 'hazard', type: 0, lane: 4, z: 300 },
@@ -86,7 +87,8 @@ export class Run {
     this.spin = 0;
     this.boost = 0;
     this.events = [];
-    this.queueTraffic(FIRST_PLAZA, 1, this.purple);
+    this.nextPurple = this.pickNextPurple();
+    this.queueTraffic(FIRST_PLAZA, 1, this.purple, this.nextPurple);
   }
 
   move(direction) {
@@ -128,19 +130,37 @@ export class Run {
     this.events.push('stop');
   }
 
-  queueTraffic(previousGate, stretch, entryLane) {
-    // Reserve a neighboring lane on each row so a player can weave through it.
-    // Convoys carry a moving gap. Keeping their spacing lets players reach the next gap.
+  pickNextPurple() {
+    // A different gate each time, without asking the player to cross all five lanes.
+    const choices = Array.from({length: LANE_COUNT}, (_, lane) => lane).filter(lane =>
+      lane !== this.purple && Math.abs(lane - this.purple) <= 2);
+    return choices[Math.floor(this.random() * choices.length)];
+  }
+
+  queueTraffic(previousGate, stretch, entryLane, exitLane = entryLane) {
+    // Plan from the gate we just left to the next one, then put traffic around that line.
     let route = entryLane;
     const tier = Math.min(4, Math.floor((stretch - 1) / 2));
     const rowCount = 5 + Math.min(3, tier);
     const spacing = 405 / (rowCount - 1);
+    let direction = 0;
     for (let row = 0; row < rowCount; row++) {
       const z = previousGate + 82 + row * spacing + Math.floor(this.random() * 5);
       const priorRoute = route;
-      const candidates = [route - 1, route, route + 1].filter(lane => lane >= 0 && lane < LANE_COUNT &&
-        (row % 2 === 0 || lane !== priorRoute));
-      route = candidates[Math.floor(this.random() * candidates.length)];
+      if (row > 0) {
+        // Complete the last turn before the toll approach. Several rows share the
+        // exit lane so the line still works when traffic reaches the booth first.
+        const stepsLeft = Math.max(0, rowCount - 3 - row);
+        const candidates = [route - 1, route, route + 1].filter(lane =>
+          lane >= 0 && lane < LANE_COUNT && Math.abs(exitLane - lane) <= stepsLeft);
+        // Prefer a sweep over a random left-right flick. Only reverse when it helps
+        // reach the next gate or keeps the run from turning into a straight line.
+        const moving = candidates.filter(lane => lane !== route);
+        const continuing = moving.filter(lane => Math.sign(lane - route) === direction);
+        const choices = continuing.length ? continuing : moving.length ? moving : candidates;
+        route = choices[Math.floor(this.random() * choices.length)];
+        direction = Math.sign(route - priorRoute);
+      }
       const alternateLanes = Array.from({length: LANE_COUNT}, (_, lane) => lane)
         .filter(lane => lane !== route && lane !== priorRoute);
       const alternate = alternateLanes[Math.floor(this.random() * alternateLanes.length)];
@@ -164,8 +184,10 @@ export class Run {
         type = (type + 1) % VEHICLE_SPEEDS.length;
       }
       const pickup = row === 1 ? 'boost' : row === 3 && stretch % 2 === 1 ? 'deadline' : row === 2 ? 'gem' : 'coin';
-      this.objects.push({ kind: pickup, lane: route, z });
-      if (pickup === 'coin') this.objects.push({ kind: 'coin', lane: route, z: z + 15 });
+      // The first coin is a steering cue. Both markers travel with the opening,
+      // so the pickup trail still points at the gap after a slowdown or a boost.
+      this.objects.push({kind: 'coin', lane: route, z: z - 8, convoy});
+      this.objects.push({kind: pickup, lane: route, z, convoy});
     }
   }
 
@@ -179,9 +201,10 @@ export class Run {
     };
     this.plaza += PLAZA_SPACING;
     this.plazaIndex++;
-    this.purple = (this.purple + 1 + Math.floor(this.random() * 4)) % LANE_COUNT;
+    this.purple = this.nextPurple;
+    this.nextPurple = this.pickNextPurple();
     this.warned = false;
-    this.queueTraffic(this.plaza, this.plazaIndex + 1, this.purple);
+    this.queueTraffic(this.plaza, this.plazaIndex + 1, this.purple, this.nextPurple);
   }
 
   collect(object) {
@@ -246,7 +269,7 @@ export class Run {
     }
     let precedingTail = Infinity;
     for (const [convoy, bounds] of convoys) {
-      const nearby = Math.max(0, Math.min(1, (710 - bounds.front + this.distance) / 330));
+      const nearby = Math.max(0, Math.min(1, (360 - bounds.front + this.distance) / 220));
       const freeTravel = dt * (12 + (convoy.speed - 12) * nearby);
       bounds.travel = Math.min(freeTravel, Math.max(0, precedingTail - bounds.front - CONVOY_GAP));
       precedingTail = bounds.tail + bounds.travel;
@@ -286,10 +309,7 @@ export class Run {
         }
       }
 
-      if (vehicle.convoy) {
-        vehicle.z += convoys.get(vehicle.convoy).travel;
-        continue;
-      }
+      if (vehicle.convoy) continue;
 
       const freeSpeed = vehicle.speed ?? VEHICLE_SPEEDS[vehicle.type] ?? 30;
       const nearby = Math.max(0, Math.min(1, (710 - distanceAhead) / 330));
@@ -304,6 +324,9 @@ export class Run {
         break;
       }
       vehicle.z += travel;
+    }
+    for (const item of this.objects) {
+      if (item.convoy) item.z += convoys.get(item.convoy)?.travel ?? 0;
     }
   }
 

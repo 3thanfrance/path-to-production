@@ -199,3 +199,32 @@ test('moving gaps change lanes and convoys maintain room to steer at turbo speed
     }
   }
 });
+
+test('following the moving pickup trail chains boosts and purple tolls without a crash', () => {
+  for (const accelerate of [false, true]) {
+    for (let start = 1; start <= 32; start++) {
+      let seed = start;
+      const run = new Run(() => ((seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 2 ** 32));
+      let boosts = 0;
+      const dt = 1 / (start % 2 ? 30 : 60);
+      for (let tick = 0; run.plazaIndex < 9 && tick < 120 / dt && !run.over; tick++) {
+        // Follow the next visible marker, with one ordinary lane input per turn.
+        const cue = run.objects.filter(item => item.kind !== 'hazard' && !item.hit &&
+          item.z >= run.distance - 4).sort((a, b) => a.z - b.z)[0];
+        if (run.plaza - run.distance <= 36) {
+          run.move(Math.sign(run.purple - run.lane));
+        } else if (cue && cue.z < run.plaza && cue.z - run.distance <= 21 + start % 5) {
+          run.move(Math.sign(cue.lane - run.lane));
+        }
+        run.update(dt, accelerate);
+        assert.ok(!run.events.includes('crash'), `seed ${start}, throttle ${accelerate}, crash at ${run.distance}`);
+        assert.equal(run.stop, 0, `seed ${start}, toll at ${run.distance}`);
+        const missed = run.objects.find(item => item.kind !== 'hazard' && !item.hit && item.z < run.distance - 5);
+        assert.equal(missed, undefined, `seed ${start}, missed ${missed?.kind} at ${missed?.z}`);
+        boosts += Number(run.events.includes('boost'));
+      }
+      assert.equal(run.plazaIndex, 9);
+      assert.equal(boosts, 9);
+    }
+  }
+});
