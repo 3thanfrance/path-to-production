@@ -242,3 +242,5 @@ em { color: var(--amber); font-style: normal; }
   .time, .attract-clock { top: 14px; left: 14px; }
   .time strong, .attract-clock strong { font-size: 37px; }
 }
+
+.pickup-key .purple-key { color: var(--violet); }

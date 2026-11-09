@@ -1,4 +1,4 @@
-import { BRAND, lanePosition, obstacleLane, plazaWidthAt } from './engine.js';
+import { BRAND, lanePosition, obstacleLane, TURBO_SPEED } from './engine.js';
 
 const TRAFFIC = [
   { label: ['TECHNICAL', 'DEBT'], colors: ['#edac61', '#965022', '#291132'] },
@@ -9,8 +9,8 @@ const TRAFFIC = [
 
 const ATTRACT_TRAFFIC = [
   { kind: 'hazard', type: 0, lane: 0, z: 27 },
-  { kind: 'hazard', type: 1, lane: 2, z: 19 },
-  { kind: 'hazard', type: 3, lane: 1, z: 75 },
+  { kind: 'hazard', type: 1, lane: 4, z: 19 },
+  { kind: 'hazard', type: 3, lane: 2, z: 75 },
   ...[4, 13, 24, 37, 51].map((z, index) => ({
     kind: 'coin', lane: 1, offset: 0.54 - index * 0.1, z,
   })),
@@ -170,7 +170,7 @@ export function createRoad(ctx) {
     ctx = display;
   }
 
-  function paintTrack(distance, cinematic, gateDepth, purple) {
+  function paintTrack(distance, gateDepth, purple) {
     const end = project(-focalDistance * .23);
     const shoulder = gradient(0, horizon, 0, height, ['#5c0c83', '#27056b', '#090838']);
     ctx.fillStyle = shoulder;
@@ -218,16 +218,9 @@ export function createRoad(ctx) {
       const outer = divider === 0 || divider === 3;
       for (let depth = -24 - distance % 18; depth < 500; depth += 18) {
         if (depth + 9 < -24) continue;
-        const laneAt = z => {
-          const blend = cinematic ? 1 : plazaWidthAt(distance + z);
-          return side * (outer ? 1 - .4 * blend : 1 / 3 - (2 / 15) * blend);
-        };
-        const z = Math.max(-24, depth);
-        const lane = laneAt(z);
-        const endLane = laneAt(depth + 9);
-        if (outer && Math.abs(lane) === 1 && Math.abs(endLane) === 1) continue;
-        const start = project(z, lane);
-        const end = project(depth + 9, endLane);
+        const lane = side * (outer ? .6 : .2);
+        const start = project(Math.max(-24, depth), lane);
+        const end = project(depth + 9, lane);
         line(start.x, start.y, end.x, end.y, '#a571f5', 6 * start.scale);
         line(start.x, start.y, end.x, end.y, '#fff1f1', 3.7 * start.scale);
       }
@@ -634,6 +627,23 @@ export function createRoad(ctx) {
       ellipse(x, floatY, r * .56, r * .85, '#ffe95d');
       ellipse(x, floatY, r * .42, r * .72, '#ffae07');
       line(x, floatY - r * .47, x, floatY + r * .47, '#ffdf50', r * .13);
+    } else if (object.kind === 'boost' || object.kind === 'deadline') {
+      const turbo = object.kind === 'boost';
+      const r = 17 * size;
+      const color = turbo ? '#68eaff' : '#a2ff9d';
+      glow(x, floatY, r * 1.9, color, turbo ? '#1f9fffbc' : '#42e878bb');
+      ellipse(x, floatY, r, r, '#071b35');
+      ctx.strokeStyle = color;
+      ctx.lineWidth = Math.max(1, 2 * size);
+      ctx.stroke();
+      if (turbo) {
+        shape([[x + .12 * r, floatY - .73 * r], [x - .51 * r, floatY + .12 * r],
+          [x - .03 * r, floatY + .12 * r], [x - .17 * r, floatY + .74 * r],
+          [x + .58 * r, floatY - .17 * r], [x + .1 * r, floatY - .17 * r]], color);
+      } else {
+        line(x, floatY - r * .54, x, floatY, color, 2 * size);
+        line(x, floatY, x + r * .46, floatY + r * .26, color, 2 * size);
+      }
     } else {
       const r = 15 * size;
       glow(x, floatY, r * 1.8, '#f8d9ff', '#c63df4d7');
@@ -665,9 +675,11 @@ export function createRoad(ctx) {
   function draw(run, mode, distance, visualLane, now) {
     const cinematic = mode === 'intro';
     const remaining = run.plaza - run.distance;
-    const approach = !cinematic && !run.stop && run.lanes === 5
-      ? Math.max(0, Math.min(1, (190 - remaining) / 170)) * Math.min(1, run.speed / 36)
-      : 0;
+    const approach = !cinematic && !run.stop
+      ? Math.max(0, Math.min(1, (230 - remaining) / 210)) : 0;
+    const velocity = Math.min(1, run.speed / TURBO_SPEED);
+    const rush = cinematic || run.stop ? 0 : Math.min(1,
+      velocity * .22 + approach * velocity * .5 + (run.boost ? .6 : 0));
     roadHalf = width * (cinematic ? .61 : .465);
     const gates = cinematic ? [{ z: 83, purple: 3 }] : [
       { z: run.plaza, purple: run.purple },
@@ -675,8 +687,8 @@ export function createRoad(ctx) {
     ];
     const objectDistance = cinematic ? 0 : run.distance;
     ctx.drawImage(sky, 0, 0, width, height);
-    paintTrack(distance, cinematic, cinematic ? 83 : remaining, cinematic ? 3 : run.purple);
-    if (!reducedMotion.matches) paintSpeed(distance, approach, lanePosition(run.purple, 5));
+    paintTrack(distance, cinematic ? 83 : remaining, cinematic ? 3 : run.purple);
+    if (!reducedMotion.matches) paintSpeed(distance, rush, lanePosition(run.purple, 5));
     const objects = cinematic ? ATTRACT_TRAFFIC : run.objects;
     const scene = [
       ...gates.map(gate => ({ z: gate.z, gate })),
@@ -696,8 +708,17 @@ export function createRoad(ctx) {
     }
     const car = project(0, cinematic ? 0 : visualLane);
     const scale = Math.min(width / 685, height / 520);
-    const lean = (lanePosition(run.lane, run.lanes) - visualLane) * .18;
-    const rumble = reducedMotion.matches ? 0 : Math.sin(distance * 1.8) * approach * 1.3;
+    const lean = (lanePosition(run.lane) - visualLane) * .18;
+    const rumble = reducedMotion.matches ? 0 : Math.sin(distance * .8) * rush * 1.3;
+    if (run.boost && !cinematic && !reducedMotion.matches) {
+      for (const side of [-1, 1]) {
+        const x = car.x + side * 45 * scale;
+        const y = car.y - 5 * scale;
+        const tail = y + (18 + Math.sin(distance) * 4) * scale;
+        shape([[x - 5 * scale, y], [x + 5 * scale, y], [x, tail]],
+          gradient(0, y, 0, tail, ['#ecffff', '#56deff', '#1468ff00']));
+      }
+    }
     coupe(car.x, car.y + rumble - (cinematic ? height * .022 : 0), scale,
       [BRAND.carOrange, '#ff691a', '#a82327'], true,
       run.spin ? Math.sin(now * .025) * .28 : lean);
