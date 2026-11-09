@@ -486,8 +486,10 @@ export function createRoad(ctx) {
     for (let i = 0; i < 7; i++) line(-14 + i * 4.6, -6, -14 + i * 4.6, -3, '#82637c');
   }
 
-  function paintTruck(type, side) {
-    const { label, colors: [light, body, dark] } = TRAFFIC[type];
+  function paintTruck(type, side, workTruck) {
+    const { label, colors: [light, body, dark] } = workTruck
+      ? {label: ['ROAD', 'WORK'], colors: ['#e6b466', '#a56028', '#432521']} : TRAFFIC[type];
+    if (workTruck) for (const x of [-30, 30]) glow(x, -105, 8, '#fff1a4', '#ff9d17');
     const sideWidth = -side * (type === 2 ? 26 : 47);
     const nose = -side * 57;
     ellipse(sideWidth * .4, -1, 74, 12, '#02051ba6');
@@ -567,8 +569,8 @@ export function createRoad(ctx) {
     drawSprite(player ? 'player' : 'coupe', () => paintCoupe(paint, player), x, y, scale, tilt, 1, yaw);
   }
 
-  function truck(x, y, scale, type, side) {
-    drawSprite(`truck:${type}:${side}`, () => paintTruck(type, side), x, y, scale, 0, .84);
+  function truck(x, y, scale, type, side, workTruck) {
+    drawSprite(`truck:${type}:${side}:${Boolean(workTruck)}`, () => paintTruck(type, side, workTruck), x, y, scale, 0, .84);
   }
 
   function item(object, distance, now, cinematic) {
@@ -596,7 +598,7 @@ export function createRoad(ctx) {
         }
       } else {
         const size = object.type === 2 ? .76 : 1.04;
-        truck(x, y, vehicleScale * (cinematic ? 1.24 : size), object.type, Math.sign(lane) || 1);
+        truck(x, y, vehicleScale * (cinematic ? 1.24 : size), object.type, Math.sign(lane) || 1, object.workTruck);
       }
       if (object.merge && (reducedMotion.matches || Math.floor(object.merge.elapsed * 5) % 2 === 0)) {
         const side = Math.sign(object.merge.to - object.lane);

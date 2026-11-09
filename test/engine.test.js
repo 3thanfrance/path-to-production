@@ -137,7 +137,7 @@ test('a blocked traffic merge cannot penalize a purple-lane toll pass', () => {
   assert.equal(run.plazaIndex, 1);
 });
 
-test('a merge signals before crossing and respects both a nearby vehicle and the escape lane', () => {
+test('a merge signals before crossing and respects both a nearby vehicle and the convoy gap', () => {
   const run = new Run();
   run.distance = 500;
   const car = {kind: 'hazard', type: 3, lane: 4, z: 665, mergeEligible: true, protectedLane: 1};
@@ -154,6 +154,7 @@ test('a merge signals before crossing and respects both a nearby vehicle and the
   assert.equal(car.lane, 3);
   assert.equal(car.merge, null);
   car.mergeEligible = true;
+  car.protectedLane = 2;
   run.distance = car.z - 160;
   run.objects.push({kind: 'hazard', type: 0, lane: 4, z: car.z + 10});
   run.advanceTraffic(.05);
@@ -170,5 +171,31 @@ test('faster traffic preserves headway behind slower trucks', () => {
     run.advanceTraffic(.05);
     assert.ok(car.z > last);
     assert.ok(truck.z - car.z >= 22 - 1e-9);
+  }
+});
+
+
+test('moving gaps change lanes and convoys maintain room to steer at turbo speed', () => {
+  let seed = 41;
+  const random = () => ((seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 2 ** 32);
+  const run = new Run(random);
+  run.objects = [];
+  run.queueTraffic(510, 8, 2);
+  const traffic = run.objects.filter(item => item.kind === 'hazard');
+  const groups = [...new Set(traffic.map(vehicle => vehicle.convoy))]
+    .map(convoy => traffic.filter(vehicle => vehicle.convoy === convoy));
+  assert.ok(traffic.some(vehicle => vehicle.lane === 2));
+  assert.ok(new Set(traffic.map(vehicle => vehicle.protectedLane)).size > 1);
+  for (let tick = 0; tick < 240; tick++) {
+    run.distance += TURBO_SPEED / 60;
+    run.advanceTraffic(1 / 60);
+    for (const group of groups) {
+      assert.ok(group.every(vehicle => vehicle.lane !== vehicle.protectedLane));
+    }
+    for (let index = 1; index < groups.length; index++) {
+      const front = Math.max(...groups[index - 1].map(vehicle => vehicle.z));
+      const tail = Math.min(...groups[index].map(vehicle => vehicle.z));
+      assert.ok(tail - front >= 37 - 1e-8);
+    }
   }
 });

@@ -214,9 +214,9 @@ export function createRoad3D(canvas) {
     return root;
   }
 
-  function truck(type) {
+  function truck(type, workTruck) {
     const group = new T.Group();
-    const paint = material(CARS[type], .6);
+    const paint = material(workTruck ? 0x9e591d : CARS[type], .6);
     const trim = material(type === 0 ? 0xbc9272 : 0x6c96c0, .55);
     const length = type === 2 ? 3.7 : 5.7;
     const high = type === 2 ? 2.05 : 2.74;
@@ -245,7 +245,15 @@ export function createRoad3D(canvas) {
       }
     }
     group.userData.wheels = wheels;
-    const words = TAGS[type].split(' ');
+    if (workTruck) {
+      box(group, ink, 0, high + .48, rear - .48, 1.64, .11, .25);
+      group.userData.workLights = [-.58, .58].map(x =>
+        box(group, amber, x, high + .57, rear - .48, .24, .12, .19));
+      for (let i = -2; i <= 2; i++) {
+        box(group, amber, i * .39, .92, rear + .075, .25, .08, .045).rotation.z = i < 0 ? -.45 : .45;
+      }
+    }
+    const words = workTruck ? ['ROAD', 'WORK'] : TAGS[type].split(' ');
     decal(group, words.join('|'), 0, high * .58 + .7, rear + .055, 2.24, 1.05);
     return group;
   }
@@ -561,9 +569,9 @@ export function createRoad3D(canvas) {
       if (relative > LOOKAHEAD || relative < -42 || (item.hit && item.kind !== 'hazard')) continue;
       visible.add(item);
       if (!traffic.has(item)) {
-        const key = item.kind === 'hazard' ? 'hazard:' + item.type : item.kind;
+        const key = item.kind === 'hazard' ? 'hazard:' + item.type + (item.workTruck ? ':work' : '') : item.kind;
         const model = pool.get(key)?.pop() ?? (item.kind !== 'hazard' ? pickup(item.kind)
-          : item.type === 3 ? sportsCar(CARS[3]) : truck(item.type));
+          : item.type === 3 ? sportsCar(CARS[3]) : truck(item.type, item.workTruck));
         traffic.set(item, {key, model});
         scene.add(model);
       }
@@ -575,6 +583,9 @@ export function createRoad3D(canvas) {
         Math.abs(obstacleLane(item) - lanePosition(express)) <= .32;
       model.scale.setScalar(yielding ? T.MathUtils.smoothstep(Math.abs(relative), 7, 30) : 1);
       if (item.kind === 'hazard') {
+        model.userData.workLights?.forEach((lamp, index) => {
+          lamp.visible = reducedMotion.matches || (Math.floor(now / 250) + index) % 2 === 0;
+        });
         const merge = item.merge;
         const progress = merge ? (merge.elapsed - MERGE_SIGNAL) / MERGE_DURATION : 0;
         const turn = progress > 0 && progress < 1 ? Math.sin(progress * Math.PI) : 0;

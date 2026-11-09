@@ -11,7 +11,7 @@ const PLAZA_SPACING = 620;
 const FIRST_PLAZA = 510;
 const PLAZA_APPROACH = 230;
 const VEHICLE_SPEEDS = [22, 25, 31, 40];
-const THROUGH_LANE = 2;
+const CONVOY_GAP = 37;
 export const MERGE_SIGNAL = .55;
 export const MERGE_DURATION = .85;
 const FOLLOW_GAP = 22;
@@ -130,17 +130,21 @@ export class Run {
 
   queueTraffic(previousGate, stretch, entryLane) {
     // Reserve a neighboring lane on each row so a player can weave through it.
-    // Each row uses distinct vehicles at a shared pace to keep its gap readable.
+    // Convoys carry a moving gap. Keeping their spacing lets players reach the next gap.
     let route = entryLane;
     const tier = Math.min(4, Math.floor((stretch - 1) / 2));
     const rowCount = 5 + Math.min(3, tier);
     const spacing = 405 / (rowCount - 1);
     for (let row = 0; row < rowCount; row++) {
-      const z = previousGate + 82 + row * spacing + Math.floor(this.random() * 10);
-      const candidates = [route - 1, route, route + 1].filter(lane => lane >= 0 && lane < LANE_COUNT);
+      const z = previousGate + 82 + row * spacing + Math.floor(this.random() * 5);
+      const priorRoute = route;
+      const candidates = [route - 1, route, route + 1].filter(lane => lane >= 0 && lane < LANE_COUNT &&
+        (row % 2 === 0 || lane !== priorRoute));
       route = candidates[Math.floor(this.random() * candidates.length)];
-      const alternate = route === THROUGH_LANE
-        ? (route + 1 + Math.floor(this.random() * (LANE_COUNT - 1))) % LANE_COUNT : THROUGH_LANE;
+      const alternateLanes = Array.from({length: LANE_COUNT}, (_, lane) => lane)
+        .filter(lane => lane !== route && lane !== priorRoute);
+      const alternate = alternateLanes[Math.floor(this.random() * alternateLanes.length)];
+      const convoy = { speed: 24 + Math.floor(this.random() * 8) + Math.min(3, tier) };
       const blocked = Array.from({length: LANE_COUNT}, (_, lane) => lane)
         .filter(lane => lane !== route && lane !== alternate);
       const rowBias = Math.floor(this.random() * 5) - 2 + Math.min(3, tier);
@@ -151,8 +155,9 @@ export class Run {
         if (!blocked.includes(lane) || lane === mergePocket) continue;
         if (!tier && row === 0 && this.random() < .45) continue;
         this.objects.push({
-          kind: 'hazard', lane, z: z + (lane - 2) * 7,
-          type, speed: VEHICLE_SPEEDS[type] + rowBias,
+          kind: 'hazard', lane, z: z + (lane - 2) * 4, convoy,
+          type, workTruck: type === 2 && row % 3 === 2,
+          speed: VEHICLE_SPEEDS[type] + rowBias,
           mergeEligible: type >= 2 && this.random() > .22,
           protectedLane: route,
         });
@@ -217,8 +222,8 @@ export class Run {
   }
 
   expressLaneAt(distance) {
-    if (distance >= this.plaza - 95 && distance <= this.plaza) return this.purple;
-    if (this.passedPlaza && distance >= this.passedPlaza.z && distance <= this.passedPlaza.z + 58) {
+    if (distance >= this.plaza - 44 && distance <= this.plaza) return this.purple;
+    if (this.passedPlaza && distance >= this.passedPlaza.z && distance <= this.passedPlaza.z + 34) {
       return this.passedPlaza.purple;
     }
     return -1;
@@ -232,6 +237,21 @@ export class Run {
     const clearToMerge = (vehicle, lane) => !vehicles.some(other => other !== vehicle &&
       sharesLane(other, lane) && Math.abs(other.z - vehicle.z) < 43);
 
+    const convoys = new Map();
+    for (const vehicle of vehicles) {
+      if (!vehicle.convoy) continue;
+      const bounds = convoys.get(vehicle.convoy);
+      if (bounds) bounds.tail = vehicle.z;
+      else convoys.set(vehicle.convoy, {front: vehicle.z, tail: vehicle.z});
+    }
+    let precedingTail = Infinity;
+    for (const [convoy, bounds] of convoys) {
+      const nearby = Math.max(0, Math.min(1, (710 - bounds.front + this.distance) / 330));
+      const freeTravel = dt * (12 + (convoy.speed - 12) * nearby);
+      bounds.travel = Math.min(freeTravel, Math.max(0, precedingTail - bounds.front - CONVOY_GAP));
+      precedingTail = bounds.tail + bounds.travel;
+    }
+
     for (let index = 0; index < vehicles.length; index++) {
       const vehicle = vehicles[index];
       const distanceAhead = vehicle.z - this.distance;
@@ -239,7 +259,7 @@ export class Run {
       const leavingExpress = vehicle.lane === this.purple && toGate > 25 && toGate < 175;
       if (!vehicle.merge && leavingExpress) {
         const adjacent = [vehicle.lane - 1, vehicle.lane + 1].find(lane => lane >= 0 &&
-          lane < LANE_COUNT && lane !== THROUGH_LANE && clearToMerge(vehicle, lane));
+          lane < LANE_COUNT && lane !== vehicle.protectedLane && clearToMerge(vehicle, lane));
         if (adjacent !== undefined) vehicle.merge = {to: adjacent, elapsed: 0};
       }
       if (vehicle.merge) {
@@ -259,11 +279,16 @@ export class Run {
         if (fromGate > 108 && fromGate < PLAZA_SPACING - 155) {
           vehicle.mergeEligible = false;
           const lanes = [vehicle.lane - 1, vehicle.lane + 1].filter(lane =>
-            lane >= 0 && lane < LANE_COUNT && lane !== THROUGH_LANE && lane !== vehicle.protectedLane &&
+            lane >= 0 && lane < LANE_COUNT && lane !== vehicle.protectedLane &&
             !(lane === this.purple && toGate < 220 && toGate > 0) &&
             Math.abs(lanePosition(lane) - playerLane) > .16 && clearToMerge(vehicle, lane));
           if (lanes.length) vehicle.merge = {to: lanes[0], elapsed: 0};
         }
+      }
+
+      if (vehicle.convoy) {
+        vehicle.z += convoys.get(vehicle.convoy).travel;
+        continue;
       }
 
       const freeSpeed = vehicle.speed ?? VEHICLE_SPEEDS[vehicle.type] ?? 30;
