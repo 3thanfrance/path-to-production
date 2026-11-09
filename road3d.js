@@ -1,11 +1,12 @@
 import * as T from 'three';
-import { BRAND, lanePosition, obstacleLane, TURBO_SPEED } from './engine.js';
+import { CHAINGUARD_OCTOPUS } from './chainguard.js';
+import { lanePosition, obstacleLane, TURBO_SPEED } from './engine.js';
 
 const LANE = 3.55;
 const HALF = LANE * 2.5;
 const DEPTH = .27;
 const LOOKAHEAD = 1250;
-const TAGS = ['TECHNICAL DEBT', 'LEGACY STACK', 'ONE-OFF BUILD', 'STATUS QUO', 'MANUAL REVIEW', 'BUILD WASTE'];
+const TAGS = ['TECHNICAL DEBT', 'LEGACY STACK', 'ONE-OFF BUILD', 'STATUS QUO'];
 const CARS = [0x9b4c27, 0x2157c1, 0x9e3274, 0x198dcc];
 const attract = [
   { kind: 'hazard', type: 0, lane: 0, z: 35 },
@@ -230,35 +231,22 @@ export function createRoad3D(canvas) {
     for (const x of [-1.22, 1.22]) {
       for (let j = 0; j < 7; j++) box(group, trim, x, 1 + j * (high - .50) / 7, .44, .07, .035, length - 1.1);
     }
+    const wheels = [];
     for (const x of [-.92, .92]) {
       box(group, red, x, .56, rear + .16, .37, .18, .1);
-      for (const z of [-1.6, .87, 1.60]) mesh(group, wheelShape, tire, x * 1.17, .43, z, 1, 1, 1);
+      for (const z of [-1.6, .87, 1.60]) {
+        const axle = new T.Group();
+        axle.position.set(x * 1.17, .43, z);
+        group.add(axle);
+        mesh(axle, wheelShape, tire, 0, 0, 0);
+        mesh(axle, wheelRim, chrome, 0, 0, 0);
+        mesh(axle, spoke, ink, 0, 0, 0);
+        wheels.push({axle});
+      }
     }
+    group.userData.wheels = wheels;
     const words = TAGS[type].split(' ');
     decal(group, words.join('|'), 0, high * .58 + .7, rear + .055, 2.24, 1.05);
-    return group;
-  }
-
-  function obstruction(type) {
-    const group = new T.Group();
-    shadow(group, 3.18, 1.9);
-    const safety = material(0xfa6d26);
-    if (type === 4) {
-      for (const x of [-1.03, 1.03]) {
-        box(group, ink, x, .43, 0, .16, .86, .23);
-        box(group, chrome, x, .08, 0, .48, .16, .58);
-        mesh(group, sphere, amber, x, 1.08, 0, .11, .11, .11);
-      }
-      box(group, safety, 0, .75, 0, 2.65, .45, .21);
-    } else {
-      const drum = new T.CylinderGeometry(.37, .37, .88, 12);
-      const belt = new T.CylinderGeometry(.38, .38, .13, 12);
-      for (const [x, z] of [[-.7, .14], [.19, -.27], [.86, .24]]) {
-        mesh(group, drum, safety, x, .44, z);
-        mesh(group, belt, stripe, x, .50, z);
-      }
-    }
-    decal(group, TAGS[type], 0, .72, .54, 1.94, .40, '#fff2d6', '#241739');
     return group;
   }
 
@@ -313,6 +301,18 @@ export function createRoad3D(canvas) {
   const boothMetal = material(0x252051, .45, .25);
   const boothTrim = material(0x654b98, .48, .28);
   const darkPurple = material(0x491288);
+  const octopusArt = document.createElement('canvas');
+  octopusArt.width = octopusArt.height = 144;
+  const octopusContext = octopusArt.getContext('2d');
+  octopusContext.setTransform(6, 0, 0, 6, 10, 12);
+  octopusContext.fillStyle = '#fff7ff';
+  octopusContext.fill(new Path2D(CHAINGUARD_OCTOPUS), 'evenodd');
+  const octopusTexture = new T.CanvasTexture(octopusArt);
+  octopusTexture.colorSpace = T.SRGBColorSpace;
+  const octopusMaterial = new T.MeshBasicMaterial({
+    map: octopusTexture, transparent: true, depthWrite: false, toneMapped: false,
+  });
+  const octopusGeometry = new T.PlaneGeometry(.92, .92);
   const closedPanel = new T.MeshStandardMaterial({
     color: 0x971921, emissive: 0xc71b24, emissiveIntensity: .28, roughness: .46,
   });
@@ -337,8 +337,7 @@ export function createRoad3D(canvas) {
       box(group, clear ? darkPurple : closedPanel, x, 3.25, .91, 2.53, .94, .28);
       box(group, clear ? purple : red, x, 3.74, 1.059, 2.56, .055, .035);
       if (clear) {
-        decal(group, BRAND.gateLabel, x, 3.34, 1.061, 2.46, .84, '#fff3ff');
-        box(group, purple, x, 3.02, 1.064, 1.95, .027, .02);
+        mesh(group, octopusGeometry, octopusMaterial, x, 3.32, 1.063);
         decal(group, '▼', x, 2.91, 1.069, .71, .42, '#a5ffcd');
       } else {
         for (const angle of [-Math.PI / 4, Math.PI / 4]) {
@@ -555,16 +554,26 @@ export function createRoad3D(canvas) {
       if (!scenery.has(key)) scenery.set(key, makePlaza(gate.purple));
       const model = scenery.get(key);
       model.position.z = -(gate.z - sceneDistance) * DEPTH;
-      if (gate.duration && gate.stoppedLane >= 0) {
-        model.userData.arms[gate.stoppedLane].rotation.z =
-          T.MathUtils.smoothstep(gate.waited, gate.duration - .65, gate.duration) * 1.09;
+      for (const [lane, arm] of model.userData.arms.entries()) {
+        if (lane === gate.purple) continue;
+        let lift = 0;
+        if (gate.stoppedLane === lane) {
+          lift = T.MathUtils.smoothstep(gate.waited, gate.duration - .65, gate.duration);
+        } else if (!intro && Math.abs(gate.z - sceneDistance) > 32) {
+          for (const vehicle of run.objects) {
+            if (vehicle.kind !== 'hazard' || vehicle.lane !== lane) continue;
+            const gap = Math.abs(gate.z - vehicle.z);
+            lift = Math.max(lift, 1 - T.MathUtils.smoothstep(gap, 9, 28));
+          }
+        }
+        arm.rotation.z += (lift * 1.09 - arm.rotation.z) * (1 - Math.exp(-16 * dt));
       }
     }
     for (const [key, model] of scenery) {
       if (!gateKeys.has(key)) {
         scene.remove(model);
         model.traverse(node => {
-          if (node.isMesh && node.geometry.type === 'PlaneGeometry' && node.geometry !== flat) node.geometry.dispose();
+          if (node.isMesh && node.geometry.type === 'PlaneGeometry' && node.geometry !== flat && node.geometry !== octopusGeometry) node.geometry.dispose();
         });
         scenery.delete(key);
       }
@@ -579,12 +588,15 @@ export function createRoad3D(canvas) {
       if (!traffic.has(item)) {
         const key = item.kind === 'hazard' ? 'hazard:' + item.type : item.kind;
         const model = pool.get(key)?.pop() ?? (item.kind !== 'hazard' ? pickup(item.kind)
-          : item.type === 3 ? sportsCar(CARS[3]) : item.type < 3 ? truck(item.type) : item.type === 6 ? bug() : obstruction(item.type));
+          : item.type === 3 ? sportsCar(CARS[3]) : item.type === 6 ? bug() : truck(item.type));
         traffic.set(item, {key, model});
         scene.add(model);
       }
       const {model} = traffic.get(item);
       model.position.set(obstacleLane(item) * HALF, 0, -relative * DEPTH);
+      if (model.userData.wheels && !intro) {
+        for (const {axle} of model.userData.wheels) axle.rotation.x = -item.z * DEPTH / .45;
+      }
       if (model.userData.bug) {
         const phase = item.phase ?? 0;
         model.userData.bug.position.y = reducedMotion.matches ? 0 : Math.sin(phase * 19) * .055;

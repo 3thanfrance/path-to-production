@@ -69,28 +69,30 @@ test('a closed toll stops at a fixed line, then remains behind the car as it lea
   assert.equal(run.lane, 2);
 });
 
-test('fixed hazards keep their world position while traffic advances at its own speed', () => {
+test('vehicles keep moving through tolls at different speeds below cruise', () => {
   const run = new Run();
-  run.objects = [{ kind: 'hazard', type: 4, lane: 0, z: 100 },
-    { kind: 'hazard', type: 0, lane: 2, z: 100, exitStart: 155 }];
+  run.distance = run.plaza - 25;
+  run.objects = [{kind: 'hazard', type: 0, lane: 0, z: run.plaza - 2},
+    {kind: 'hazard', type: 3, lane: 4, z: run.plaza - 2}];
+  const origin = run.objects[0].z;
   run.update(1, false, true);
-  assert.equal(run.objects[0].z, 100);
-  assert.equal(run.objects[1].z, 124);
-  assert.notEqual(run.distance, 24);
+  assert.equal(run.objects[0].z - origin, 25);
+  assert.equal(run.objects[1].z - origin, 41);
 });
-
 
 test('post-toll traffic is already present before crossing and stays inside its lane', () => {
   const run = new Run(() => .63);
   const gate = run.plaza;
   const firstObstacle = run.objects.find(item => item.kind === 'hazard' && item.z > gate);
   assert.ok(firstObstacle);
-  const initialCount = run.objects.filter(item => item.z > gate && item.z < gate + 620).length;
+  const firstRow = run.objects.filter(item => item.kind === 'hazard' && item.z === firstObstacle.z);
+  assert.equal(new Set(firstRow.map(item => item.type)).size, firstRow.length);
+  const initialZ = firstObstacle.z;
   run.move(1);
   while (!run.plazaIndex && !run.over) run.update(1 / 60, true);
   assert.equal(run.stop, 0);
   assert.ok(run.objects.includes(firstObstacle));
-  assert.equal(run.objects.filter(item => item.z > gate && item.z < gate + 620).length, initialCount);
+  assert.ok(firstObstacle.z > initialZ);
 });
 
 test('steering builds lateral speed before settling and follows the same path across frame rates', () => {

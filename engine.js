@@ -1,4 +1,4 @@
-export const BRAND = Object.freeze({ carOrange: '#FFB310', chainguardPurple: '#ad65ff', gateLabel: 'CHAINGUARD®' });
+export const BRAND = Object.freeze({ carOrange: '#FFB310', chainguardPurple: '#ad65ff' });
 export const PRODUCTION_DISTANCE = 2000;
 export const LANE_COUNT = 5;
 export const CRUISE_SPEED = 56;
@@ -10,7 +10,7 @@ const MAX_TIME = 60;
 const PLAZA_SPACING = 620;
 const FIRST_PLAZA = 510;
 const PLAZA_APPROACH = 230;
-const HAZARD_SPEEDS = [24, 29, 34, 41, 0, 0];
+const VEHICLE_SPEEDS = [25, 30, 35, 41];
 
 export const lanePosition = (lane, lanes = LANE_COUNT) => (2 * lane + 1) / lanes - 1;
 
@@ -37,17 +37,17 @@ export function stepSteering(position, velocity, target, dt) {
 
 function openingTraffic() {
   return [
-    { kind: 'hazard', type: 0, lane: 0, z: 85, stopAt: FIRST_PLAZA - 55 },
-    { kind: 'hazard', type: 1, lane: 4, z: 96, stopAt: FIRST_PLAZA - 55 },
+    { kind: 'hazard', type: 0, lane: 0, z: 85 },
+    { kind: 'hazard', type: 1, lane: 4, z: 96 },
     ...[32, 47, 62, 77, 92].map(z => ({ kind: 'coin', lane: 2, z })),
     { kind: 'boost', lane: 2, z: 115 },
-    { kind: 'hazard', type: 4, lane: 1, z: 172 },
-    { kind: 'hazard', type: 5, lane: 4, z: 178 },
+    { kind: 'hazard', type: 2, lane: 1, z: 172 },
+    { kind: 'hazard', type: 3, lane: 4, z: 178 },
     { kind: 'deadline', lane: 3, z: 230 },
     { kind: 'gem', lane: 2, z: 263 },
-    { kind: 'hazard', type: 5, lane: 0, z: 290 },
-    { kind: 'hazard', type: 4, lane: 2, z: 290 },
-    { kind: 'hazard', type: 5, lane: 4, z: 300 },
+    { kind: 'hazard', type: 1, lane: 0, z: 290 },
+    { kind: 'hazard', type: 2, lane: 2, z: 290 },
+    { kind: 'hazard', type: 0, lane: 4, z: 300 },
   ];
 }
 
@@ -127,7 +127,7 @@ export class Run {
 
   queueTraffic(previousGate, stretch, entryLane) {
     // Reserve a neighboring lane on each row so a player can weave through it.
-    // Moving rows use one speed. Static rows stay far enough apart for turbo.
+    // Each row uses distinct vehicles at a shared pace to keep its gap readable.
     let route = entryLane;
     const tier = Math.min(4, Math.floor((stretch - 1) / 2));
     const rowCount = 5 + Math.min(3, tier);
@@ -136,8 +136,7 @@ export class Run {
       const z = previousGate + 82 + row * spacing + Math.floor(this.random() * 10);
       const candidates = [route - 1, route, route + 1].filter(lane => lane >= 0 && lane < LANE_COUNT);
       route = candidates[Math.floor(this.random() * candidates.length)];
-      const moving = row === rowCount - 1;
-      const bugRow = tier > 0 && !moving && (row === 2 || (tier >= 3 && row === 4));
+      const bugRow = tier > 0 && row !== rowCount - 1 && (row === 2 || (tier >= 3 && row === 4));
       const openAlternates = Array.from({length: LANE_COUNT}, (_, lane) => lane).filter(lane =>
         lane !== route && (!bugRow || [0, 1, 2, 3].some(start =>
           start !== route && start + 1 !== route && start !== lane && start + 1 !== lane)));
@@ -145,18 +144,19 @@ export class Run {
       const blocked = Array.from({length: LANE_COUNT}, (_, lane) => lane)
         .filter(lane => lane !== route && lane !== alternate);
       const bugLane = bugRow ? blocked.find(lane => blocked.includes(lane + 1)) : undefined;
+      const speed = 23 + Math.floor(this.random() * 12) + Math.min(5, tier * 2);
       if (bugLane !== undefined) {
-        this.objects.push({kind: 'hazard', type: 6, lane: bugLane, sweepTo: bugLane + 1, z, phase: 0});
+        this.objects.push({kind: 'hazard', type: 6, lane: bugLane, sweepTo: bugLane + 1, z, phase: 0, speed});
       }
-      const type = Math.floor(this.random() * 4);
+      let type = Math.floor(this.random() * VEHICLE_SPEEDS.length);
       for (let lane = 0; lane < LANE_COUNT; lane++) {
         if (!blocked.includes(lane) || lane === bugLane || lane === bugLane + 1) continue;
         if (!tier && row === 0 && this.random() < .45) continue;
         this.objects.push({
           kind: 'hazard', lane, z,
-          type: moving ? (type + (tier > 1 ? lane : 0)) % 4 : 4 + Math.floor(this.random() * 2),
-          stopAt: previousGate + PLAZA_SPACING - 55,
+          type, speed,
         });
+        type = (type + 1) % VEHICLE_SPEEDS.length;
       }
       const pickup = row === 1 ? 'boost' : row === 3 && stretch % 2 === 1 ? 'deadline' : row === 2 ? 'gem' : 'coin';
       this.objects.push({ kind: pickup, lane: route, z });
@@ -265,10 +265,9 @@ export class Run {
     for (const object of this.objects) {
       if (object.kind === 'hazard') {
         if (object.sweepTo != null && object.z - this.distance < 135) object.phase += dt;
-        const speed = HAZARD_SPEEDS[object.type] ?? 0;
-        const room = (object.stopAt ?? Infinity) - object.z;
-        const activity = Math.max(0, Math.min(1, (1050 - object.z + this.distance) / 200));
-        object.z += dt * Math.min(speed, Math.max(0, room) * .6) * activity;
+        const speed = object.speed ?? VEHICLE_SPEEDS[object.type] ?? 30;
+        const nearby = Math.max(0, Math.min(1, (710 - object.z + this.distance) / 330));
+        object.z += dt * (12 + (speed - 12) * nearby);
       }
       if (held || this.stop || object.hit || object.z < before - 4 || object.z > this.distance + 4) continue;
       if (Math.abs(obstacleLane(object) - playerLane) <= .18) this.collect(object);

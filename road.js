@@ -1,3 +1,4 @@
+import { CHAINGUARD_OCTOPUS } from './chainguard.js';
 import { BRAND, lanePosition, obstacleLane, TURBO_SPEED } from './engine.js';
 
 const TRAFFIC = [
@@ -23,6 +24,7 @@ export function createRoad(ctx) {
   let cameraOffset = 0;
   let cameraLane = 0;
   const sprites = new Map();
+  const octopus = new Path2D(CHAINGUARD_OCTOPUS);
   const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
 
   function gradient(x1, y1, x2, y2, colors) {
@@ -357,10 +359,10 @@ export function createRoad(ctx) {
         ctx.save();
         ctx.translate(x, panelY + tall * .16);
         ctx.scale(unit / 70, unit / 70);
-        ctx.font = '900 13px monospace';
-        ctx.textAlign = 'center';
-        ctx.fillStyle = '#fff3ff';
-        ctx.fillText(BRAND.gateLabel, 0, 3, 58);
+        ctx.translate(-9, -10);
+        ctx.scale(.86, .86);
+        ctx.fillStyle = '#fff7ff';
+        ctx.fill(octopus, 'evenodd');
         ctx.restore();
       }
       const markY = panelY + tall * .33;
@@ -540,37 +542,6 @@ export function createRoad(ctx) {
     });
   }
 
-  function paintFixedHazard(type) {
-    ellipse(0, 0, 57, 10, '#050519bd');
-    if (type === 4) {
-      for (const x of [-43, 36]) {
-        box(x, -48, 9, 48, 3, '#30223e', '#d08476', 1.5);
-        box(x - 8, -5, 25, 6, 2, '#26182f', '#af6785');
-        glow(x + 4, -49, 11, '#fff8b5', '#ff7609ce');
-      }
-      box(-53, -42, 106, 27, 5, gradient(0, -42, 0, -15, ['#ffe595', '#ef752c', '#731c39']), '#241231', 3);
-      for (let x = -43; x <= 43; x += 14) line(x - 5, -18, x + 4, -39, '#792440', 3);
-      box(-40, -37, 80, 17, 3, '#2b1733');
-      ctx.font = '900 10px monospace';
-      ctx.fillStyle = '#fff2d8';
-      ctx.textAlign = 'center';
-      ctx.fillText('MANUAL REVIEW', 0, -25);
-    } else {
-      for (const [x, y] of [[-35, -5], [6, 0], [33, -12]]) {
-        box(x - 13, y - 38, 26, 37, 5, gradient(x - 13, 0, x + 13, 0,
-          ['#5f1f43', '#ffae4c', '#df4b28', '#501b44']), '#230f2e', 2);
-        ellipse(x, y - 37, 12, 4, '#ffbd62');
-        box(x - 12, y - 24, 24, 8, 2, '#ffe0a4');
-        line(x - 10, y - 14, x + 10, y - 14, '#8a2e48', 2);
-      }
-      box(-39, -21, 77, 13, 3, '#211638', '#f68c74');
-      ctx.font = '900 9px monospace';
-      ctx.fillStyle = '#fff1dd';
-      ctx.textAlign = 'center';
-      ctx.fillText('BUILD WASTE', 0, -12);
-    }
-  }
-
   // Paint each vehicle once at sprite resolution, then composite it at road depth.
   function drawSprite(key, painter, x, y, scale, tilt = 0, widthScale = 1, yaw = 0) {
     if (!sprites.has(key)) {
@@ -633,8 +604,7 @@ export function createRoad(ctx) {
           }
           ellipse(x + side * size * .25, y - size * .48, size * .10, size * .08, '#fff2a4');
         }
-      } else if (object.type >= 4) {
-        drawSprite(`fixed:${object.type}`, () => paintFixedHazard(object.type), x, y, vehicleScale);
+
       } else {
         const size = object.type === 2 ? .76 : 1.04;
         truck(x, y, vehicleScale * (cinematic ? 1.24 : size), object.type, Math.sign(lane) || 1);

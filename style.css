@@ -244,3 +244,5 @@ em { color: var(--amber); font-style: normal; }
 }
 
 .pickup-key .purple-key { color: var(--violet); }
+
+#turbo-time { display: block; color: var(--cyan); font-size: 8px; margin-bottom: 3px; }
