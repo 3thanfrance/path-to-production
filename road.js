@@ -18,6 +18,8 @@ const ATTRACT_TRAFFIC = [
 
 export function createRoad(ctx) {
   let width, height, horizon, center, roadHalf, near, sky;
+  const sprites = new Map();
+  const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
 
   function gradient(x1, y1, x2, y2, colors) {
     const paint = ctx.createLinearGradient(x1, y1, x2, y2);
@@ -250,14 +252,29 @@ export function createRoad(ctx) {
     const unit = roadHalf * 2 * p.scale / 5;
     const tall = Math.min(unit * 1.3, height * .33 * p.scale + unit * .44);
     if (unit < 6) return;
+    const exit = center + (openLane - 2) * unit;
+    shape([[exit - unit * .29, p.y], [exit + unit * .29, p.y],
+      [exit + unit * .55, p.y + tall * .55], [exit - unit * .55, p.y + tall * .55]],
+      gradient(0, p.y, 0, p.y + tall * .55, ['#b745ff86', '#8228ff00']));
     if (unit > 20) sign(center + unit * 1.52, p.y - tall * 1.13, unit / 103);
     for (let lane = 0; lane <= 5; lane++) {
       const x = center + (lane - 2.5) * unit;
       ellipse(x, p.y, unit * .19, tall * .061, '#f19cff8f');
       box(x - unit * .14, p.y - tall * .78, unit * .28, tall * .79, unit * .09,
         gradient(x - unit * .14, 0, x + unit * .14, 0, ['#080c3b', '#313b9d', '#652b8e', '#100c35']), '#ac75dd', Math.max(.5, unit * .012));
+      if (unit > 26) {
+        for (const offset of [-.1, -.066, .066, .1]) {
+          line(x + unit * offset, p.y - tall * .71, x + unit * offset, p.y - tall * .06,
+            offset < 0 ? '#bc7cff7a' : '#120939b0', Math.max(1, unit * .012));
+        }
+        for (const level of [.08, .72]) {
+          box(x - unit * .16, p.y - tall * level, unit * .32, tall * .044, unit * .02,
+            gradient(0, p.y - tall * level, 0, p.y - tall * (level - .044), ['#cb83eb', '#28134e']));
+        }
+      }
       for (let lamp = 0; lamp < 3; lamp++) {
         const y = p.y - tall * (.12 + lamp * .17);
+        ellipse(x, y, unit * .059, unit * .047, '#3f1831');
         glow(x, y, unit * .12, '#fffed1', '#ff8d02d8');
       }
       line(x - unit * .17, p.y, x + unit * .17, p.y, '#ffc6ff', Math.max(1, unit * .022));
@@ -270,12 +287,29 @@ export function createRoad(ctx) {
       shape([[x - unit * .53, roofY + tall * .22], [x, roofY], [x + unit * .53, roofY + tall * .22],
         [x + unit * .5, roofY + tall * .31], [x - unit * .5, roofY + tall * .31]],
         gradient(0, roofY, 0, roofY + tall * .3, ['#9e4bff', '#282274', '#171042']), '#9a70ee', Math.max(1, unit * .021));
-      line(x - unit * .43, roofY + tall * .22, x + unit * .43, roofY + tall * .22, '#df73ff');
+      line(x - unit * .47, roofY + tall * .21, x, roofY + tall * .033, '#b988ff', unit * .012);
+      line(x, roofY + tall * .033, x + unit * .47, roofY + tall * .21, '#503797', unit * .012);
+      for (let rib = 0; rib < 4 && unit > 26; rib++) {
+        const across = .14 + rib * .087;
+        const y = roofY + tall * (.08 + rib * .033);
+        line(x - unit * across, y, x + unit * across, y, '#a984ff61', unit * .009);
+      }
+      box(x - unit * .51, roofY + tall * .205, unit * 1.02, tall * .077, unit * .03,
+        gradient(0, roofY + tall * .20, 0, roofY + tall * .29, ['#a963dd', '#322065', '#0a0828']));
       const panelY = roofY + tall * .24;
       box(x - unit * .411, panelY, unit * .822, tall * .35, unit * .085, '#100a29', neon, Math.max(1, unit * .026));
       box(x - unit * .378, panelY + tall * .026, unit * .756, tall * .29, unit * .06,
         gradient(0, panelY, 0, panelY + tall * .35, open
           ? ['#8c17ee', '#5904aa', '#2c105e'] : ['#ff4925', '#e51222', '#770923']));
+      if (unit > 24) {
+        line(x - unit * .31, panelY + tall * .05, x + unit * .31, panelY + tall * .05,
+          open ? '#f4aaff' : '#ffb26e', unit * .014);
+        line(x - unit * .33, panelY + tall * .28, x + unit * .33, panelY + tall * .28,
+          open ? '#8e5fff' : '#ff355e', unit * .01);
+        for (const side of [-1, 1]) {
+          ellipse(x + side * unit * .375, panelY + tall * .062, unit * .013, unit * .013, '#e7c8e9');
+        }
+      }
       if (open) {
         ctx.save();
         ctx.translate(x, panelY + tall * .16);
@@ -322,24 +356,48 @@ export function createRoad(ctx) {
 
   function wheel(x, y, w, h) {
     box(x, y, w, h, 7, '#05091e', '#303263', 2);
-    line(x + w * .33, y + 4, x + w * .33, y + h - 4, '#474166');
+    for (let tread = 1; tread <= 3; tread++) {
+      line(x + w * tread / 4, y + 5, x + w * tread / 4, y + h - 5, '#454062');
+    }
+    ellipse(x + w * .54, y + h * .55, w * .25, h * .3, '#111029');
+    ellipse(x + w * .54, y + h * .55, w * .13, h * .19, '#685b82');
   }
 
-  function coupe(x, y, scale, paint, player, tilt = 0) {
-    ctx.save();
-    ctx.translate(x, y);
-    ctx.rotate(tilt);
-    ctx.scale(scale, scale);
-    ellipse(0, -2, 75, 12, '#030518ad');
+  function paintCoupe(paint, player) {
+    ellipse(0, -2, 78, 13, '#030518b8');
     wheel(-70, -29, 24, 34);
     wheel(46, -29, 24, 34);
     const [light, body, dark] = paint;
-    shape([[-68, -6], [-74, -34], [-65, -59], [-49, -71], [-39, -91], [40, -91],
-      [53, -70], [66, -57], [74, -35], [68, -8], [43, 0], [-46, 0]],
-      gradient(0, -91, 0, 0, [light, body, dark, body]), '#230a31', 3);
-    shape([[-51, -69], [-38, -89], [39, -89], [52, -69], [43, -63], [-43, -63]], light);
+    ctx.beginPath();
+    ctx.moveTo(-68, -7);
+    ctx.bezierCurveTo(-80, -16, -76, -48, -63, -59);
+    ctx.quadraticCurveTo(-51, -66, -45, -81);
+    ctx.quadraticCurveTo(-40, -94, -25, -94);
+    ctx.lineTo(25, -94);
+    ctx.quadraticCurveTo(40, -94, 45, -81);
+    ctx.quadraticCurveTo(51, -66, 63, -59);
+    ctx.bezierCurveTo(76, -48, 80, -16, 68, -7);
+    ctx.quadraticCurveTo(51, 2, 38, 2);
+    ctx.lineTo(-38, 2);
+    ctx.quadraticCurveTo(-51, 2, -68, -7);
+    ctx.closePath();
+    ctx.fillStyle = gradient(-63, -83, 57, 1, [dark, body, light, body, dark]);
+    ctx.fill();
+    ctx.strokeStyle = '#210921';
+    ctx.lineWidth = 3;
+    ctx.stroke();
+    for (const side of [-1, 1]) {
+      shape([[side * 42, -84], [side * 58, -62], [side * 69, -47],
+        [side * 59, -42], [side * 44, -53], [side * 39, -65]],
+        gradient(side * 38, -82, side * 69, -42, [light, body, dark]));
+      line(side * 44, -79, side * 60, -55, '#fff3a7b0', 1.8);
+      line(side * 58, -54, side * 68, -46, '#ffe898', 2);
+    }
+    line(-24, -91, 24, -91, '#fff3adbe', 1.5);
     shape([[-43, -65], [-33, -81], [33, -81], [43, -65], [38, -49], [-38, -49]],
       gradient(0, -81, 0, -49, ['#070b29', '#12487a', '#1b2c62']), '#15102d', 3);
+    shape([[-36, -76], [25, -79], [38, -70], [-39, -66]], '#63c9ff39');
+    for (let i = 0; i < 4; i++) line(-36, -58 - i * 4, 37, -58 - i * 4, '#78b8ff32');
     line(-27, -78, 19, -78, '#98d2f8a0', 1.5);
     shape([[-68, -39], [-43, -47], [43, -47], [68, -39], [67, -14], [48, -7], [-47, -7], [-67, -14]],
       gradient(0, -47, 0, -7, [light, body, dark]), '#571332', 1.4);
@@ -359,24 +417,56 @@ export function createRoad(ctx) {
       ellipse(side * 48, -4, 9, 5, '#0d0f21');
       ellipse(side * 48, -4, 5, 3, '#75688a');
     }
+    line(-65, -37, -23, -44, '#fff1acac', 2.1);
+    line(23, -44, 65, -37, '#fff1acac', 2.1);
+    line(-59, -13, 59, -13, '#ffdb9966', 1.2);
     box(-17, -24, 34, 8, 2, '#1a1224', '#81444f');
-    ctx.restore();
+    box(-18, -7, 36, 5, 2, '#140d25', '#71364b');
+    for (let i = 0; i < 7; i++) line(-14 + i * 4.6, -6, -14 + i * 4.6, -3, '#82637c');
   }
 
-  function truck(x, y, scale, type, side) {
+  function paintTruck(type, side) {
     const { label, colors: [light, body, dark] } = TRAFFIC[type];
-    ctx.save();
-    ctx.translate(x, y);
-    ctx.scale(scale, scale);
-    const sideWidth = -side * 35;
+    const sideWidth = -side * (type === 2 ? 26 : 47);
+    const nose = -side * 57;
     ellipse(sideWidth * .4, -1, 74, 12, '#02051ba6');
+    box(nose - 14, -86, 28, 62, 10, gradient(nose - 14, 0, nose + 14, 0,
+      ['#14183b', '#1b5684', '#76cbde', '#1b3563']), '#110d29', 3);
+    box(nose - 11, -81, 22, 22, 5, '#132d53', '#80d4e0');
+    wheel(nose - 12, -39, 21, 32);
     for (const wheelX of [-50, 33, sideWidth - 10]) wheel(wheelX, -27, 19, 31);
-    shape([[-56, -96], [-56 + sideWidth, -115], [56 + sideWidth, -115], [56, -96]], light, '#1e1132', 2);
+    shape([[-56, -96], [-56 + sideWidth, -115], [56 + sideWidth, -115], [56, -96]], gradient(0, -115, 0, -95, ['#fff0b3', light, body]), '#1e1132', 2);
+    for (let rib = 1; rib < 5; rib++) {
+      const t = rib / 5;
+      line(-56 + sideWidth * t, -96 - 19 * t, 56 + sideWidth * t, -96 - 19 * t, '#3b254557', 1);
+    }
     const edge = sideWidth > 0 ? 56 : -56;
     shape([[edge, -96], [edge + sideWidth, -115], [edge + sideWidth, -37], [edge, -15]],
       gradient(edge, 0, edge + sideWidth, 0, [body, light, dark]), '#220b2d', 2);
+    for (let rib = 1; rib < 8; rib++) {
+      const t = rib / 8;
+      line(edge + sideWidth * t, -96 - 19 * t, edge + sideWidth * t, -15 - 22 * t, '#e6c0bf4f', 1.3);
+    }
+    line(edge, -92, edge + sideWidth, -111, '#ffe1a7a8', 1.6);
+    line(edge, -20, edge + sideWidth, -41, '#b276b6', 1.2);
     box(-56, -96, 112, 79, 5, gradient(-56, -96, 56, -17, [light, body, dark]), '#24112d', 3);
-    for (let i = -5; i <= 5; i++) line(i * 9, -92, i * 9, -21, '#fce5c225', 1.1);
+    for (const door of [-50, 3]) {
+      box(door, -90, 47, 65, 3, '#100c1d25', '#e3b5a263');
+      for (let rib = 4; rib < 45; rib += 5) {
+        line(door + rib, -88, door + rib, -27, rib % 2 ? '#fce5c233' : '#130a2250', 1.15);
+      }
+    }
+    for (const hingeX of [-49, 46]) {
+      for (const hingeY of [-85, -61, -36]) {
+        box(hingeX - 3, hingeY, 7, 4, 1, '#bf9690', '#402037');
+      }
+    }
+    line(-3, -87, -3, -29, '#e2b4a083', 1.7);
+    line(3, -87, 3, -29, '#563951', 1.8);
+    line(-14, -39, -2, -39, '#b39199', 2.3);
+    line(2, -39, 14, -39, '#b39199', 2.3);
+    line(-53, -94, 53, -94, '#ffe6bfa5', 1.5);
+    line(-54, -24, 54, -24, '#140b26', 1.6);
     line(0, -94, 0, -20, '#211230', 2);
     box(-54, -21, 108, 17, 4, '#231530', '#8c6795', 2);
     for (const lightX of [-43, 43]) glow(lightX, -13, 11, '#ffefab', '#ff2906ee');
@@ -389,7 +479,34 @@ export function createRoad(ctx) {
       ctx.strokeText(word, 0, -65 + index * 17, 104);
       ctx.fillText(word, 0, -65 + index * 17, 104);
     });
+  }
+
+  // Paint each vehicle once at sprite resolution, then composite it at road depth.
+  function drawSprite(key, painter, x, y, scale, tilt = 0) {
+    if (!sprites.has(key)) {
+      const sprite = document.createElement('canvas');
+      sprite.width = 420;
+      sprite.height = 280;
+      const roadContext = ctx;
+      ctx = sprite.getContext('2d');
+      ctx.setTransform(2, 0, 0, 2, 210, 244);
+      painter();
+      ctx = roadContext;
+      sprites.set(key, sprite);
+    }
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(tilt);
+    ctx.drawImage(sprites.get(key), -105 * scale, -122 * scale, 210 * scale, 140 * scale);
     ctx.restore();
+  }
+
+  function coupe(x, y, scale, paint, player, tilt) {
+    drawSprite(player ? 'player' : 'coupe', () => paintCoupe(paint, player), x, y, scale, tilt);
+  }
+
+  function truck(x, y, scale, type, side) {
+    drawSprite(`truck:${type}:${side}`, () => paintTruck(type, side), x, y, scale);
   }
 
   function item(object, distance, now, cinematic) {
@@ -431,15 +548,40 @@ export function createRoad(ctx) {
     }
   }
 
+  function paintSpeed(distance, intensity, lane) {
+    if (intensity <= 0) return;
+    for (let i = 0; i < 26; i++) {
+      const side = i % 2 ? -1 : 1;
+      const offset = side * (.64 + (i % 7) * .13);
+      const z = 8 + ((i * 19.7 - distance * 2.55) % 230 + 230) % 230;
+      const start = project(z + 8 + intensity * 22, offset);
+      const end = project(z, offset);
+      line(start.x, start.y, end.x, end.y, `rgba(240,113,255,${intensity * end.scale * .66})`,
+        Math.max(.7, end.scale * 2.9));
+    }
+    for (let i = 0; i < 9; i++) {
+      const z = 6 + ((i * 24 - distance * 1.8) % 216 + 216) % 216;
+      const far = project(z + 12, lane);
+      const close = project(z, lane);
+      line(far.x, far.y, close.x, close.y, `rgba(230,141,255,${intensity * close.scale * .37})`,
+        close.scale * 5);
+    }
+  }
+
   function draw(run, mode, distance, visualLane, now) {
     const cinematic = mode === 'intro';
     const remaining = run.plaza - run.distance;
+    const approach = !cinematic && !run.stop && run.lanes === 5
+      ? Math.max(0, Math.min(1, (190 - remaining) / 170)) * Math.min(1, run.speed / 36)
+      : 0;
+    near = 94 + (reducedMotion.matches ? 0 : 20 * approach);
     roadHalf = width * (cinematic ? .61 : .465);
     const depth = cinematic ? 83 : run.stop ? 0 : remaining;
     const openLane = cinematic ? 3 : run.purple;
     const laneCount = cinematic ? 5 : run.lanes;
     ctx.drawImage(sky, 0, 0, width, height);
     paintTrack(distance, laneCount, depth, openLane);
+    if (!reducedMotion.matches) paintSpeed(distance, approach, lanePosition(openLane, 5));
     const objects = cinematic ? ATTRACT_TRAFFIC : run.objects;
     const objectDistance = cinematic ? 0 : run.distance;
     const sorted = [...objects].sort((a, b) => b.z - a.z);
@@ -456,8 +598,11 @@ export function createRoad(ctx) {
     }
     const car = project(0, cinematic ? 0 : visualLane);
     const scale = Math.min(width / 685, height / 520);
-    coupe(car.x, car.y - (cinematic ? height * .022 : 0), scale, ['#ffe053', BRAND.carOrange, '#e34809'], true,
-      run.spin ? Math.sin(now * .025) * .28 : 0);
+    const lean = (lanePosition(run.lane, run.lanes) - visualLane) * .18;
+    const rumble = reducedMotion.matches ? 0 : Math.sin(distance * 1.8) * approach * 1.3;
+    coupe(car.x, car.y + rumble - (cinematic ? height * .022 : 0), scale,
+      ['#ffde65', BRAND.carOrange, '#b8320d'], true,
+      run.spin ? Math.sin(now * .025) * .28 : lean);
   }
 
   return { resize, draw };
