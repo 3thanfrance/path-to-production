@@ -594,17 +594,6 @@ export function createRoad(ctx) {
           ctx.fillStyle = '#e0f5ff';
           ctx.fillText('STATUS QUO', x, y - 68 * vehicleScale);
         }
-      } else if (object.type === 6) {
-        const size = Math.max(2, 21 * vehicleScale);
-        ellipse(x, y - size * .55, size, size * .64, '#721476');
-        for (const side of [-1, 1]) {
-          for (let leg = 0; leg < 3; leg++) {
-            line(x, y - size * .63, x + side * size * (1.28 + leg * .14), y - size * leg * .35,
-              '#ff65d6', Math.max(1, size * .09));
-          }
-          ellipse(x + side * size * .25, y - size * .48, size * .10, size * .08, '#fff2a4');
-        }
-
       } else {
         const size = object.type === 2 ? .76 : 1.04;
         truck(x, y, vehicleScale * (cinematic ? 1.24 : size), object.type, Math.sign(lane) || 1);

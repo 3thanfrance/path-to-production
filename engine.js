@@ -24,12 +24,7 @@ export function obstacleLane(object) {
     const t = Math.max(0, Math.min(1, (object.merge.elapsed - MERGE_SIGNAL) / MERGE_DURATION));
     return from + (lanePosition(object.merge.to) - from) * t * t * (3 - 2 * t);
   }
-  if (object.sweepTo == null) return from;
-  // Blink at either end before the bug crosses. Collision and render share this path.
-  const phase = (object.phase ?? 0) % 2.8;
-  const crossing = Math.min(1, Math.max(0, phase < 1.4 ? (phase - .65) / .7 : (2.8 - phase) / .7));
-  const eased = crossing * crossing * (3 - 2 * crossing);
-  return from + (lanePosition(object.sweepTo) - from) * eased;
+  return from;
 }
 
 export function stepSteering(position, velocity, target, dt) {
@@ -144,24 +139,16 @@ export class Run {
       const z = previousGate + 82 + row * spacing + Math.floor(this.random() * 10);
       const candidates = [route - 1, route, route + 1].filter(lane => lane >= 0 && lane < LANE_COUNT);
       route = candidates[Math.floor(this.random() * candidates.length)];
-      const bugRow = tier > 0 && row !== rowCount - 1 && (row === 2 || (tier >= 3 && row === 4));
-      const openAlternates = Array.from({length: LANE_COUNT}, (_, lane) => lane).filter(lane =>
-        lane !== route && (!bugRow || [0, 1, 2, 3].some(start =>
-          start !== route && start + 1 !== route && start !== lane && start + 1 !== lane)));
       const alternate = route === THROUGH_LANE
-        ? openAlternates[Math.floor(this.random() * openAlternates.length)] : THROUGH_LANE;
+        ? (route + 1 + Math.floor(this.random() * (LANE_COUNT - 1))) % LANE_COUNT : THROUGH_LANE;
       const blocked = Array.from({length: LANE_COUNT}, (_, lane) => lane)
         .filter(lane => lane !== route && lane !== alternate);
-      const bugLane = bugRow ? blocked.find(lane => blocked.includes(lane + 1)) : undefined;
       const rowBias = Math.floor(this.random() * 5) - 2 + Math.min(3, tier);
-      if (bugLane !== undefined) {
-        this.objects.push({kind: 'hazard', type: 6, lane: bugLane, sweepTo: bugLane + 1, z, phase: 0, speed: 28 + rowBias});
-      }
       let type = Math.floor(this.random() * VEHICLE_SPEEDS.length);
-      const mergePocket = !bugRow && (row === 1 || row === 3)
+      const mergePocket = (row === 1 || row === 3)
         ? blocked.find(lane => blocked.some(other => Math.abs(other - lane) === 1)) : undefined;
       for (let lane = 0; lane < LANE_COUNT; lane++) {
-        if (!blocked.includes(lane) || lane === mergePocket || lane === bugLane || lane === bugLane + 1) continue;
+        if (!blocked.includes(lane) || lane === mergePocket) continue;
         if (!tier && row === 0 && this.random() < .45) continue;
         this.objects.push({
           kind: 'hazard', lane, z: z + (lane - 2) * 7,
@@ -229,10 +216,18 @@ export class Run {
     }
   }
 
+  expressLaneAt(distance) {
+    if (distance >= this.plaza - 95 && distance <= this.plaza) return this.purple;
+    if (this.passedPlaza && distance >= this.passedPlaza.z && distance <= this.passedPlaza.z + 58) {
+      return this.passedPlaza.purple;
+    }
+    return -1;
+  }
+
   advanceTraffic(dt) {
     const vehicles = this.objects.filter(object => object.kind === 'hazard').sort((a, b) => b.z - a.z);
     const playerLane = this.steering.position;
-    const occupancy = vehicle => [vehicle.lane, vehicle.merge?.to ?? vehicle.sweepTo ?? vehicle.lane];
+    const occupancy = vehicle => [vehicle.lane, vehicle.merge?.to ?? vehicle.lane];
     const sharesLane = (vehicle, lane) => occupancy(vehicle).includes(lane);
     const clearToMerge = (vehicle, lane) => !vehicles.some(other => other !== vehicle &&
       sharesLane(other, lane) && Math.abs(other.z - vehicle.z) < 43);
@@ -240,7 +235,13 @@ export class Run {
     for (let index = 0; index < vehicles.length; index++) {
       const vehicle = vehicles[index];
       const distanceAhead = vehicle.z - this.distance;
-      if (vehicle.sweepTo != null && distanceAhead < 135) vehicle.phase += dt;
+      const toGate = this.plaza - vehicle.z;
+      const leavingExpress = vehicle.lane === this.purple && toGate > 25 && toGate < 175;
+      if (!vehicle.merge && leavingExpress) {
+        const adjacent = [vehicle.lane - 1, vehicle.lane + 1].find(lane => lane >= 0 &&
+          lane < LANE_COUNT && lane !== THROUGH_LANE && clearToMerge(vehicle, lane));
+        if (adjacent !== undefined) vehicle.merge = {to: adjacent, elapsed: 0};
+      }
       if (vehicle.merge) {
         const merge = vehicle.merge;
         if (merge.elapsed < MERGE_SIGNAL && !clearToMerge(vehicle, merge.to)) {
@@ -259,6 +260,7 @@ export class Run {
           vehicle.mergeEligible = false;
           const lanes = [vehicle.lane - 1, vehicle.lane + 1].filter(lane =>
             lane >= 0 && lane < LANE_COUNT && lane !== THROUGH_LANE && lane !== vehicle.protectedLane &&
+            !(lane === this.purple && toGate < 220 && toGate > 0) &&
             Math.abs(lanePosition(lane) - playerLane) > .16 && clearToMerge(vehicle, lane));
           if (lanes.length) vehicle.merge = {to: lanes[0], elapsed: 0};
         }
@@ -327,8 +329,12 @@ export class Run {
 
     this.advanceTraffic(dt);
     const playerLane = this.steering.position;
+    const express = this.expressLaneAt(this.distance);
+    const usingExpress = express >= 0 && Math.abs(lanePosition(express) - playerLane) <= .16;
     for (const object of this.objects) {
       if (held || this.stop || object.hit || object.z < before - 4 || object.z > this.distance + 4) continue;
+      // Purple toll priority prevents a blocked NPC merge from punishing a clean approach.
+      if (usingExpress && object.kind === 'hazard') continue;
       if (Math.abs(obstacleLane(object) - playerLane) <= .18) this.collect(object);
     }
     this.objects = this.objects.filter(object => object.z > this.distance - 45 );

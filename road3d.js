@@ -250,29 +250,6 @@ export function createRoad3D(canvas) {
     return group;
   }
 
-  const bugShell = material(0x331345, .37, .48);
-  const bugLight = neon(0xff48d5);
-  const bugEyes = neon(0xffcf62);
-  function bug() {
-    const group = new T.Group();
-    shadow(group, 2.7, 2.25);
-    const chassis = new T.Group();
-    group.add(chassis);
-    mesh(chassis, new T.IcosahedronGeometry(1, 0), bugShell, 0, .74, 0, .91, .52, .94);
-    mesh(chassis, sphere, bugLight, 0, .99, .29, .27, .095, .34);
-    for (const side of [-1, 1]) {
-      mesh(chassis, sphere, bugEyes, side * .29, .76, .74, .10, .09, .09);
-      for (let leg = 0; leg < 3; leg++) {
-        const z = (leg - 1) * .52;
-        box(chassis, bugShell, side * .79, .51, z, .72, .13, .16).rotation.z = side * -.38;
-        box(chassis, bugLight, side * 1.12, .28, z, .37, .085, .095).rotation.z = side * -.70;
-      }
-    }
-    halo(chassis, 0xff36b9, 0, .65, .72, 1.5, .76);
-    group.userData.bug = chassis;
-    return group;
-  }
-
   const tokenMaterials = {coin: neon(0xffd34d), gem: neon(0xd676ff), boost: blue, deadline: neon(0x97ffb2)};
   const tokenShapes = {
     coin: new T.CylinderGeometry(.31, .31, .10, 18).rotateX(Math.PI / 2),
@@ -397,7 +374,6 @@ export function createRoad3D(canvas) {
   const posts = new T.InstancedMesh(cube, boothTrim, markerCount * 2);
   const reflectors = new T.InstancedMesh(cube, amber, markerCount * 2);
   const arrows = new T.InstancedMesh(new T.ConeGeometry(.20, .57, 3).rotateX(-Math.PI / 2), purple, 13);
-  const bugPaths = new T.InstancedMesh(cube, neon(0xfb4dd0), 24);
   const exhaust = new T.InstancedMesh(cube, neon(0x73eaff), 28);
   const dummy = new T.Object3D();
   for (const instances of [markings, posts, reflectors, arrows]) {
@@ -405,7 +381,7 @@ export function createRoad3D(canvas) {
     instances.instanceMatrix.setUsage(T.DynamicDrawUsage);
     scene.add(instances);
   }
-  for (const instances of [bugPaths, exhaust]) {
+  for (const instances of [exhaust]) {
     instances.frustumCulled = false;
     instances.instanceMatrix.setUsage(T.DynamicDrawUsage);
     scene.add(instances);
@@ -580,7 +556,6 @@ export function createRoad3D(canvas) {
     }
 
     const visible = new Set();
-    let bugPathCount = 0;
     for (const item of intro ? attract : run.objects) {
       const relative = item.z - sceneDistance;
       if (relative > LOOKAHEAD || relative < -42 || (item.hit && item.kind !== 'hazard')) continue;
@@ -588,13 +563,18 @@ export function createRoad3D(canvas) {
       if (!traffic.has(item)) {
         const key = item.kind === 'hazard' ? 'hazard:' + item.type : item.kind;
         const model = pool.get(key)?.pop() ?? (item.kind !== 'hazard' ? pickup(item.kind)
-          : item.type === 3 ? sportsCar(CARS[3]) : item.type === 6 ? bug() : truck(item.type));
+          : item.type === 3 ? sportsCar(CARS[3]) : truck(item.type));
         traffic.set(item, {key, model});
         scene.add(model);
       }
       const {model} = traffic.get(item);
       model.position.set(obstacleLane(item) * HALF, 0, -relative * DEPTH);
-      if (!model.userData.bug && item.kind === 'hazard') {
+      const express = run.expressLaneAt(sceneDistance);
+      const yielding = !intro && item.kind === 'hazard' && express >= 0 &&
+        Math.abs(steer - lanePosition(express)) <= .16 &&
+        Math.abs(obstacleLane(item) - lanePosition(express)) <= .32;
+      model.scale.setScalar(yielding ? T.MathUtils.smoothstep(Math.abs(relative), 7, 30) : 1);
+      if (item.kind === 'hazard') {
         const merge = item.merge;
         const progress = merge ? (merge.elapsed - MERGE_SIGNAL) / MERGE_DURATION : 0;
         const turn = progress > 0 && progress < 1 ? Math.sin(progress * Math.PI) : 0;
@@ -613,15 +593,6 @@ export function createRoad3D(canvas) {
       if (model.userData.wheels && !intro) {
         for (const {axle} of model.userData.wheels) axle.rotation.x = -item.z * DEPTH / .45;
       }
-      if (model.userData.bug) {
-        const phase = item.phase ?? 0;
-        model.userData.bug.position.y = reducedMotion.matches ? 0 : Math.sin(phase * 19) * .055;
-        model.userData.bug.rotation.z = reducedMotion.matches ? 0 : Math.sin(phase * 12) * .12;
-        if (relative < 145) {
-          place(bugPaths, bugPathCount++, (lanePosition(item.lane) + lanePosition(item.sweepTo)) * HALF / 2,
-            .035, model.position.z, LANE + .28, .02, .08 + (reducedMotion.matches ? 0 : Math.sin(phase * 12) ** 2 * .065));
-        }
-      }
       if (model.userData.token) {
         model.userData.token.position.y = .62 + .14 * Math.sin(now * .006 + item.z);
         model.userData.token.rotation.y = item.kind === 'deadline' ? Math.sin(now * .003) * .38 : now * .004 + item.z;
@@ -635,8 +606,6 @@ export function createRoad3D(canvas) {
       traffic.delete(item);
     }
 
-    bugPaths.count = bugPathCount;
-    bugPaths.instanceMatrix.needsUpdate = true;
     player.position.x = steer * HALF;
     exhaust.count = speed > .27 && !reducedMotion.matches ? (run.boost ? 28 : 12) : 0;
     for (let particle = 0; particle < exhaust.count; particle++) {

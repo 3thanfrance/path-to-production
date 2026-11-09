@@ -110,24 +110,32 @@ test('steering builds lateral speed before settling and follows the same path ac
 });
 
 
-test('later stretches add rows and confine bug sweeps to lanes away from the pickup route', () => {
-  for (const random of [.02, .25, .52, .77, .98]) {
-    const run = new Run(() => random);
-    run.objects = [];
-    run.queueTraffic(5000, 9, 2);
-    assert.equal(run.objects.filter(item => item.kind === 'boost').length, 1);
-    assert.ok(run.objects.filter(item => item.kind === 'hazard').length >= 16);
-    const bugs = run.objects.filter(item => item.type === 6);
-    assert.equal(bugs.length, 2);
-    for (const bug of bugs) {
-      const pickup = run.objects.find(item => item.kind !== 'hazard' && item.z === bug.z);
-      assert.ok(pickup.lane < bug.lane || pickup.lane > bug.sweepTo);
-      assert.equal(obstacleLane({...bug, phase: .2}), lanePosition(bug.lane));
-      assert.equal(obstacleLane({...bug, phase: 1.4}), lanePosition(bug.sweepTo));
-    }
-  }
+test('later traffic uses only standard vehicles', () => {
+  const run = new Run(() => .52);
+  run.objects = [];
+  run.queueTraffic(5000, 9, 2);
+  const hazards = run.objects.filter(item => item.kind === 'hazard');
+  assert.ok(hazards.length >= 16);
+  assert.ok(hazards.every(item => item.type >= 0 && item.type <= 3));
 });
 
+test('a blocked traffic merge cannot penalize a purple-lane toll pass', () => {
+  const run = new Run();
+  run.lane = run.purple;
+  run.steering.position = lanePosition(run.purple);
+  run.distance = run.plaza - 12;
+  run.speed = TOP_SPEED;
+  run.boost = 2;
+  run.objects = [{kind: 'hazard', type: 0, lane: run.purple, z: run.plaza - 7}];
+  const gate = run.plaza;
+  while (run.distance < gate + 24) {
+    run.update(1 / 60, true);
+    assert.ok(!run.events.includes('crash'));
+    assert.equal(run.stop, 0);
+    assert.ok(run.boost > 0);
+  }
+  assert.equal(run.plazaIndex, 1);
+});
 
 test('a merge signals before crossing and respects both a nearby vehicle and the escape lane', () => {
   const run = new Run();
