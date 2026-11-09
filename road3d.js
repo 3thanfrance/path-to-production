@@ -1,5 +1,5 @@
 import * as T from 'three';
-import { TURBO_SPEED } from './engine.js';
+import { BRAND, lanePosition, obstacleLane, TURBO_SPEED } from './engine.js';
 
 const LANE = 3.55;
 const HALF = LANE * 2.5;
@@ -81,25 +81,7 @@ export function createRoad3D(canvas) {
       c.textAlign = 'center';
       c.textBaseline = 'middle';
       c.fillStyle = color;
-      if (value === 'OCTOPUS') {
-        c.beginPath();
-        c.ellipse(192, 49, 26, 34, 0, 0, Math.PI * 2);
-        c.fill();
-        c.lineWidth = 8;
-        c.lineCap = 'round';
-        c.strokeStyle = color;
-        for (let i = -3; i <= 3; i++) {
-          c.beginPath();
-          c.moveTo(192 + i * 7, 68);
-          c.quadraticCurveTo(192 + i * 15, 114, 192 + i * 21, 87 + Math.abs(i) * 4);
-          c.stroke();
-        }
-        c.fillStyle = '#3e146a';
-        c.fillRect(181, 46, 6, 7);
-        c.fillRect(197, 46, 6, 7);
-      } else {
-        lines.forEach((line, i) => c.fillText(line, 192, 72 + (i - (lines.length - 1) / 2) * 58, 350));
-      }
+      lines.forEach((line, i) => c.fillText(line, 192, 72 + (i - (lines.length - 1) / 2) * 58, 350));
       const texture = new T.CanvasTexture(art);
       texture.colorSpace = T.SRGBColorSpace;
       labelCache.set(key, new T.MeshBasicMaterial({map: texture, transparent: true, depthWrite: false, toneMapped: false}));
@@ -206,7 +188,8 @@ export function createRoad3D(canvas) {
       box(body, stripe, 0, 1.474, -.16, .42, .012, .87);
       box(body, stripe, 0, 1.136, 1.6, .42, .015, .37);
       box(body, stripe, 0, .697, 2.132, .41, .27, .015);
-      decal(body, '42', 0, .70, 2.15, .49, .26, '#21172a');
+      box(body, ink, 0, .65, 2.165, .82, .275, .035);
+      decal(body, '$PRINT', 0, .65, 2.187, .77, .24, '#fff4cb', '#1a1734');
       const roofNumber = decal(body, '42', 0, 1.483, -.13, .53, .52, '#21172a');
       roofNumber.rotation.x = -Math.PI / 2;
     }
@@ -279,6 +262,29 @@ export function createRoad3D(canvas) {
     return group;
   }
 
+  const bugShell = material(0x331345, .37, .48);
+  const bugLight = neon(0xff48d5);
+  const bugEyes = neon(0xffcf62);
+  function bug() {
+    const group = new T.Group();
+    shadow(group, 2.7, 2.25);
+    const chassis = new T.Group();
+    group.add(chassis);
+    mesh(chassis, new T.IcosahedronGeometry(1, 0), bugShell, 0, .74, 0, .91, .52, .94);
+    mesh(chassis, sphere, bugLight, 0, .99, .29, .27, .095, .34);
+    for (const side of [-1, 1]) {
+      mesh(chassis, sphere, bugEyes, side * .29, .76, .74, .10, .09, .09);
+      for (let leg = 0; leg < 3; leg++) {
+        const z = (leg - 1) * .52;
+        box(chassis, bugShell, side * .79, .51, z, .72, .13, .16).rotation.z = side * -.38;
+        box(chassis, bugLight, side * 1.12, .28, z, .37, .085, .095).rotation.z = side * -.70;
+      }
+    }
+    halo(chassis, 0xff36b9, 0, .65, .72, 1.5, .76);
+    group.userData.bug = chassis;
+    return group;
+  }
+
   const tokenMaterials = {coin: neon(0xffd34d), gem: neon(0xd676ff), boost: blue, deadline: neon(0x97ffb2)};
   const tokenShapes = {
     coin: new T.CylinderGeometry(.31, .31, .10, 18).rotateX(Math.PI / 2),
@@ -331,7 +337,8 @@ export function createRoad3D(canvas) {
       box(group, clear ? darkPurple : closedPanel, x, 3.25, .91, 2.53, .94, .28);
       box(group, clear ? purple : red, x, 3.74, 1.059, 2.56, .055, .035);
       if (clear) {
-        decal(group, 'OCTOPUS', x, 3.31, 1.061, 2.5, .77, '#ffe6ff');
+        decal(group, BRAND.gateLabel, x, 3.34, 1.061, 2.46, .84, '#fff3ff');
+        box(group, purple, x, 3.02, 1.064, 1.95, .027, .02);
         decal(group, '▼', x, 2.91, 1.069, .71, .42, '#a5ffcd');
       } else {
         for (const angle of [-Math.PI / 4, Math.PI / 4]) {
@@ -391,8 +398,15 @@ export function createRoad3D(canvas) {
   const posts = new T.InstancedMesh(cube, boothTrim, markerCount * 2);
   const reflectors = new T.InstancedMesh(cube, amber, markerCount * 2);
   const arrows = new T.InstancedMesh(new T.ConeGeometry(.20, .57, 3).rotateX(-Math.PI / 2), purple, 13);
+  const bugPaths = new T.InstancedMesh(cube, neon(0xfb4dd0), 24);
+  const exhaust = new T.InstancedMesh(cube, neon(0x73eaff), 28);
   const dummy = new T.Object3D();
   for (const instances of [markings, posts, reflectors, arrows]) {
+    instances.frustumCulled = false;
+    instances.instanceMatrix.setUsage(T.DynamicDrawUsage);
+    scene.add(instances);
+  }
+  for (const instances of [bugPaths, exhaust]) {
     instances.frustumCulled = false;
     instances.instanceMatrix.setUsage(T.DynamicDrawUsage);
     scene.add(instances);
@@ -557,6 +571,7 @@ export function createRoad3D(canvas) {
     }
 
     const visible = new Set();
+    let bugPathCount = 0;
     for (const item of intro ? attract : run.objects) {
       const relative = item.z - sceneDistance;
       if (relative > LOOKAHEAD || relative < -42 || (item.hit && item.kind !== 'hazard')) continue;
@@ -564,12 +579,21 @@ export function createRoad3D(canvas) {
       if (!traffic.has(item)) {
         const key = item.kind === 'hazard' ? 'hazard:' + item.type : item.kind;
         const model = pool.get(key)?.pop() ?? (item.kind !== 'hazard' ? pickup(item.kind)
-          : item.type === 3 ? sportsCar(CARS[3]) : item.type < 3 ? truck(item.type) : obstruction(item.type));
+          : item.type === 3 ? sportsCar(CARS[3]) : item.type < 3 ? truck(item.type) : item.type === 6 ? bug() : obstruction(item.type));
         traffic.set(item, {key, model});
         scene.add(model);
       }
       const {model} = traffic.get(item);
-      model.position.set((item.lane - 2) * LANE, 0, -relative * DEPTH);
+      model.position.set(obstacleLane(item) * HALF, 0, -relative * DEPTH);
+      if (model.userData.bug) {
+        const phase = item.phase ?? 0;
+        model.userData.bug.position.y = reducedMotion.matches ? 0 : Math.sin(phase * 19) * .055;
+        model.userData.bug.rotation.z = reducedMotion.matches ? 0 : Math.sin(phase * 12) * .12;
+        if (relative < 145) {
+          place(bugPaths, bugPathCount++, (lanePosition(item.lane) + lanePosition(item.sweepTo)) * HALF / 2,
+            .035, model.position.z, LANE + .28, .02, .08 + (reducedMotion.matches ? 0 : Math.sin(phase * 12) ** 2 * .065));
+        }
+      }
       if (model.userData.token) {
         model.userData.token.position.y = .62 + .14 * Math.sin(now * .006 + item.z);
         model.userData.token.rotation.y = item.kind === 'deadline' ? Math.sin(now * .003) * .38 : now * .004 + item.z;
@@ -583,7 +607,19 @@ export function createRoad3D(canvas) {
       traffic.delete(item);
     }
 
+    bugPaths.count = bugPathCount;
+    bugPaths.instanceMatrix.needsUpdate = true;
     player.position.x = steer * HALF;
+    exhaust.count = speed > .27 && !reducedMotion.matches ? (run.boost ? 28 : 12) : 0;
+    for (let particle = 0; particle < exhaust.count; particle++) {
+      const age = (sceneDistance * .055 + particle * .173) % 1;
+      const side = particle % 2 ? -1 : 1;
+      const fade = 1 - age;
+      place(exhaust, particle, player.position.x + side * (.7 + age * .20) - input * age * .36,
+        .25 + age * .24, 2.19 + age * (run.boost ? 3.3 : 1.65), .027 * fade, .026 * fade,
+        (.09 + speed * .19) * fade);
+    }
+    exhaust.instanceMatrix.needsUpdate = true;
     const body = player.userData.body;
     body.position.y = reducedMotion.matches ? 0 : speed * (.025 * Math.sin(sceneDistance * .74) + .014 * Math.sin(sceneDistance * 1.3));
     body.rotation.z = -input * .086;
@@ -594,8 +630,9 @@ export function createRoad3D(canvas) {
       axle.rotation.x = -sceneDistance * DEPTH / .45;
     }
     jets.forEach((jet, i) => {
-      jet.visible = inMotion && run.boost > 0;
-      jet.scale.z = reducedMotion.matches ? .8 : 1 + Math.sin(sceneDistance * .81 + i) * .24;
+      jet.visible = inMotion && speed > .4;
+      jet.scale.z = run.boost ? (reducedMotion.matches ? .8 : 1 + Math.sin(sceneDistance * .81 + i) * .24) : .27;
+      jet.position.z = run.boost ? 2.64 : 2.27;
     });
     const tall = aspect < .85;
     chaseX += (player.position.x * (tall ? .91 : .57) - chaseX) * (1 - Math.exp(-7.5 * dt));

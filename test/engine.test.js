@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {Run,rank,TOP_SPEED,TURBO_SPEED,DEADLINE_SECONDS} from '../engine.js';
+import {Run,rank,TOP_SPEED,TURBO_SPEED,DEADLINE_SECONDS,obstacleLane,lanePosition} from '../engine.js';
 test('red booth holds for eight seconds and resumes without double charging',()=>{const r=new Run();r.lane=0;r.toll();assert.equal(r.stop,8);for(let i=0;i<480;i++)r.update(1/60,true);assert.ok(r.stop<1e-10);assert.ok(Math.abs(r.time-37)<1e-8);assert.equal(r.tollLost,8);r.update(.1,true);assert.ok(r.speed>0);});
 test('purple lane refunds two seconds with zero stop and respects cap',()=>{const r=new Run();r.lane=r.purple;r.toll();assert.equal(r.time,47);assert.equal(r.stop,0);r.time=59;r.toll();assert.equal(r.time,60);});
 test('purchase requires 15 brilliance, cannot stack, consumes on red only',()=>{const r=new Run();assert.equal(r.buy(),false);r.brilliance=30;assert.equal(r.buy(),true);assert.equal(r.brilliance,15);assert.equal(r.buy(),false);r.lane=r.purple;r.toll();assert.equal(r.pass,true);r.lane=0;r.toll();assert.equal(r.pass,false);assert.equal(r.stop,2);assert.equal(r.tollLost,2);});
@@ -105,4 +105,23 @@ test('steering builds lateral speed before settling and follows the same path ac
     return run;
   });
   assert.ok(Math.abs(runs[0].steering.position - runs[1].steering.position) < 1e-6);
+});
+
+
+test('later stretches add rows and confine bug sweeps to lanes away from the pickup route', () => {
+  for (const random of [.02, .25, .52, .77, .98]) {
+    const run = new Run(() => random);
+    run.objects = [];
+    run.queueTraffic(5000, 9, 2);
+    const rows = new Set(run.objects.filter(item => item.kind === 'hazard').map(item => item.z));
+    assert.equal(rows.size, 8);
+    const bugs = run.objects.filter(item => item.type === 6);
+    assert.equal(bugs.length, 2);
+    for (const bug of bugs) {
+      const pickup = run.objects.find(item => item.kind !== 'hazard' && item.z === bug.z);
+      assert.ok(pickup.lane < bug.lane || pickup.lane > bug.sweepTo);
+      assert.equal(obstacleLane({...bug, phase: .2}), lanePosition(bug.lane));
+      assert.equal(obstacleLane({...bug, phase: 1.4}), lanePosition(bug.sweepTo));
+    }
+  }
 });

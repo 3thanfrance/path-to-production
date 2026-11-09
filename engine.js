@@ -1,4 +1,4 @@
-export const BRAND = Object.freeze({ carOrange: '#FFB310', chainguardPurple: '#ad65ff', chainguardMark: 'placeholder octopus' });
+export const BRAND = Object.freeze({ carOrange: '#FFB310', chainguardPurple: '#ad65ff', gateLabel: 'CHAINGUARD®' });
 export const PRODUCTION_DISTANCE = 2000;
 export const LANE_COUNT = 5;
 export const CRUISE_SPEED = 56;
@@ -14,7 +14,15 @@ const HAZARD_SPEEDS = [24, 29, 34, 41, 0, 0];
 
 export const lanePosition = (lane, lanes = LANE_COUNT) => (2 * lane + 1) / lanes - 1;
 
-export const obstacleLane = object => lanePosition(object.lane);
+export function obstacleLane(object) {
+  const from = lanePosition(object.lane);
+  if (object.sweepTo == null) return from;
+  // Blink at either end before the bug crosses. Collision and render share this path.
+  const phase = (object.phase ?? 0) % 2.8;
+  const crossing = Math.min(1, Math.max(0, phase < 1.4 ? (phase - .65) / .7 : (2.8 - phase) / .7));
+  const eased = crossing * crossing * (3 - 2 * crossing);
+  return from + (lanePosition(object.sweepTo) - from) * eased;
+}
 
 export function stepSteering(position, velocity, target, dt) {
   const response = 17;
@@ -121,19 +129,32 @@ export class Run {
     // Reserve a neighboring lane on each row so a player can weave through it.
     // Moving rows use one speed. Static rows stay far enough apart for turbo.
     let route = entryLane;
-    for (let row = 0; row < 5; row++) {
-      const z = previousGate + 103 + row * 86 + Math.floor(this.random() * 12);
+    const tier = Math.min(4, Math.floor((stretch - 1) / 2));
+    const rowCount = 5 + Math.min(3, tier);
+    const spacing = 405 / (rowCount - 1);
+    for (let row = 0; row < rowCount; row++) {
+      const z = previousGate + 82 + row * spacing + Math.floor(this.random() * 10);
       const candidates = [route - 1, route, route + 1].filter(lane => lane >= 0 && lane < LANE_COUNT);
       route = candidates[Math.floor(this.random() * candidates.length)];
-      const alternate = (route + 1 + Math.floor(this.random() * 4)) % LANE_COUNT;
-      const moving = row === 4;
+      const moving = row === rowCount - 1;
+      const bugRow = tier > 0 && !moving && (row === 2 || (tier >= 3 && row === 4));
+      const openAlternates = Array.from({length: LANE_COUNT}, (_, lane) => lane).filter(lane =>
+        lane !== route && (!bugRow || [0, 1, 2, 3].some(start =>
+          start !== route && start + 1 !== route && start !== lane && start + 1 !== lane)));
+      const alternate = openAlternates[Math.floor(this.random() * openAlternates.length)];
+      const blocked = Array.from({length: LANE_COUNT}, (_, lane) => lane)
+        .filter(lane => lane !== route && lane !== alternate);
+      const bugLane = bugRow ? blocked.find(lane => blocked.includes(lane + 1)) : undefined;
+      if (bugLane !== undefined) {
+        this.objects.push({kind: 'hazard', type: 6, lane: bugLane, sweepTo: bugLane + 1, z, phase: 0});
+      }
       const type = Math.floor(this.random() * 4);
       for (let lane = 0; lane < LANE_COUNT; lane++) {
-        if (lane === route || lane === alternate) continue;
-        if (row === 0 && this.random() < .45) continue;
+        if (!blocked.includes(lane) || lane === bugLane || lane === bugLane + 1) continue;
+        if (!tier && row === 0 && this.random() < .45) continue;
         this.objects.push({
           kind: 'hazard', lane, z,
-          type: moving ? type : 4 + Math.floor(this.random() * 2),
+          type: moving ? (type + (tier > 1 ? lane : 0)) % 4 : 4 + Math.floor(this.random() * 2),
           stopAt: previousGate + PLAZA_SPACING - 55,
         });
       }
@@ -243,6 +264,7 @@ export class Run {
     const playerLane = this.steering.position;
     for (const object of this.objects) {
       if (object.kind === 'hazard') {
+        if (object.sweepTo != null && object.z - this.distance < 135) object.phase += dt;
         const speed = HAZARD_SPEEDS[object.type] ?? 0;
         const room = (object.stopAt ?? Infinity) - object.z;
         const activity = Math.max(0, Math.min(1, (1050 - object.z + this.distance) / 200));

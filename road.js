@@ -277,22 +277,6 @@ export function createRoad(ctx) {
     ctx.restore();
   }
 
-  function octopusMark() {
-    ctx.strokeStyle = '#fff1ff';
-    ctx.lineWidth = 3.2;
-    ctx.lineCap = 'round';
-    for (let i = 0; i < 8; i++) {
-      const x = (i - 3.5) * 3.1;
-      ctx.beginPath();
-      ctx.moveTo(x * .54, 6);
-      ctx.quadraticCurveTo(x * .85, 16, x * 1.42, 12 - Math.abs(x) * .47);
-      ctx.stroke();
-    }
-    ellipse(0, -1, 9, 12, '#fff1ff');
-    ellipse(-3, -2, 1.35, 1.2, '#7c12db');
-    ellipse(3, -2, 1.35, 1.2, '#7c12db');
-  }
-
   function plaza(depth, openLane, releasedLane, release) {
     const p = project(depth);
     const unit = roadHalf * 2 * p.scale / 5;
@@ -373,7 +357,10 @@ export function createRoad(ctx) {
         ctx.save();
         ctx.translate(x, panelY + tall * .16);
         ctx.scale(unit / 70, unit / 70);
-        octopusMark();
+        ctx.font = '900 13px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#fff3ff';
+        ctx.fillText(BRAND.gateLabel, 0, 3, 58);
         ctx.restore();
       }
       const markY = panelY + tall * .33;
@@ -486,7 +473,13 @@ export function createRoad(ctx) {
       line(side * 39, -88, side * 46, -73, '#f981cf7d', 1);
       line(side * 64, -12, side * 69, -26, '#9360d9a8', 1.2);
     }
-    box(-17, -24, 34, 8, 2, '#1a1224', '#81444f');
+    box(-20, -24, 40, 9, 2, '#1a1224', '#81444f');
+    if (player) {
+      ctx.font = '900 7px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#fff3cc';
+      ctx.fillText('$PRINT', 0, -17);
+    }
     box(-18, -7, 36, 5, 2, '#140d25', '#71364b');
     for (let i = 0; i < 7; i++) line(-14 + i * 4.6, -6, -14 + i * 4.6, -3, '#82637c');
   }
@@ -629,6 +622,16 @@ export function createRoad(ctx) {
           ctx.textAlign = 'center';
           ctx.fillStyle = '#e0f5ff';
           ctx.fillText('STATUS QUO', x, y - 68 * vehicleScale);
+        }
+      } else if (object.type === 6) {
+        const size = Math.max(2, 21 * vehicleScale);
+        ellipse(x, y - size * .55, size, size * .64, '#721476');
+        for (const side of [-1, 1]) {
+          for (let leg = 0; leg < 3; leg++) {
+            line(x, y - size * .63, x + side * size * (1.28 + leg * .14), y - size * leg * .35,
+              '#ff65d6', Math.max(1, size * .09));
+          }
+          ellipse(x + side * size * .25, y - size * .48, size * .10, size * .08, '#fff2a4');
         }
       } else if (object.type >= 4) {
         drawSprite(`fixed:${object.type}`, () => paintFixedHazard(object.type), x, y, vehicleScale);
