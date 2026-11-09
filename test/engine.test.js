@@ -22,3 +22,28 @@ test('the opening coin trail is collectible before the plaza, then one lane chan
   assert.equal(run.tollLost, 0);
   assert.ok(run.events.includes('toll'));
 });
+
+test('a closed toll stops at a fixed line, then remains behind the car as it leaves', () => {
+  const run = new Run();
+  const gate = run.plaza;
+  while (!run.stop && !run.over) run.update(1 / 60, true);
+  assert.equal(run.distance, gate - 12);
+  assert.equal(run.passedPlaza.z, gate);
+  assert.equal(run.passedPlaza.stoppedLane, run.lane);
+  for (let i = 0; i < 480; i++) run.update(1 / 60, true);
+  assert.equal(run.distance, gate - 12);
+  assert.equal(run.passedPlaza.z, gate);
+  while (run.distance <= gate && !run.over) run.update(1 / 60, true);
+  assert.equal(run.passedPlaza.z, gate);
+  assert.equal(run.lanes, 5);
+});
+
+test('fixed hazards keep their world position while traffic advances at its own speed', () => {
+  const run = new Run();
+  run.objects = [{ kind: 'hazard', type: 4, lane: 0, z: 100 },
+    { kind: 'hazard', type: 0, lane: 2, z: 100, exitStart: 155 }];
+  run.update(1, false, true);
+  assert.equal(run.objects[0].z, 100);
+  assert.equal(run.objects[1].z, 109);
+  assert.notEqual(run.distance, 9);
+});
