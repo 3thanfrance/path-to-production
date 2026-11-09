@@ -51,7 +51,7 @@ test('procedural obstacle rows leave two lanes open and keep a continuous pickup
     assert.ok(Math.abs(pickup.lane - lane) <= 1);
     lane = pickup.lane;
   }
-  assert.ok(rows.filter(item => item.kind === 'hazard').length >= 12);
+  assert.ok(rows.filter(item => item.kind === 'hazard').length >= 10);
 });
 
 test('a closed toll stops at a fixed line, then remains behind the car as it leaves', () => {
@@ -76,8 +76,8 @@ test('vehicles keep moving through tolls at different speeds below cruise', () =
     {kind: 'hazard', type: 3, lane: 4, z: run.plaza - 2}];
   const origin = run.objects[0].z;
   run.update(1, false, true);
-  assert.equal(run.objects[0].z - origin, 25);
-  assert.equal(run.objects[1].z - origin, 41);
+  assert.equal(run.objects[0].z - origin, 22);
+  assert.equal(run.objects[1].z - origin, 40);
 });
 
 test('post-toll traffic is already present before crossing and stays inside its lane', () => {
@@ -115,8 +115,8 @@ test('later stretches add rows and confine bug sweeps to lanes away from the pic
     const run = new Run(() => random);
     run.objects = [];
     run.queueTraffic(5000, 9, 2);
-    const rows = new Set(run.objects.filter(item => item.kind === 'hazard').map(item => item.z));
-    assert.equal(rows.size, 8);
+    assert.equal(run.objects.filter(item => item.kind === 'boost').length, 1);
+    assert.ok(run.objects.filter(item => item.kind === 'hazard').length >= 16);
     const bugs = run.objects.filter(item => item.type === 6);
     assert.equal(bugs.length, 2);
     for (const bug of bugs) {
@@ -125,5 +125,42 @@ test('later stretches add rows and confine bug sweeps to lanes away from the pic
       assert.equal(obstacleLane({...bug, phase: .2}), lanePosition(bug.lane));
       assert.equal(obstacleLane({...bug, phase: 1.4}), lanePosition(bug.sweepTo));
     }
+  }
+});
+
+
+test('a merge signals before crossing and respects both a nearby vehicle and the escape lane', () => {
+  const run = new Run();
+  run.distance = 500;
+  const car = {kind: 'hazard', type: 3, lane: 4, z: 665, mergeEligible: true, protectedLane: 1};
+  const blocker = {kind: 'hazard', type: 0, lane: 3, z: 681};
+  run.objects = [car, blocker];
+  run.advanceTraffic(.05);
+  assert.equal(car.merge, undefined);
+  run.objects = [car];
+  car.mergeEligible = true;
+  run.advanceTraffic(.05);
+  assert.equal(car.merge.to, 3);
+  assert.equal(obstacleLane(car), lanePosition(4));
+  for (let i = 0; i < 30; i++) run.advanceTraffic(.05);
+  assert.equal(car.lane, 3);
+  assert.equal(car.merge, null);
+  car.mergeEligible = true;
+  run.distance = car.z - 160;
+  run.objects.push({kind: 'hazard', type: 0, lane: 4, z: car.z + 10});
+  run.advanceTraffic(.05);
+  assert.equal(car.merge, null);
+});
+
+test('faster traffic preserves headway behind slower trucks', () => {
+  const run = new Run();
+  const truck = {kind: 'hazard', type: 0, lane: 1, z: 100};
+  const car = {kind: 'hazard', type: 3, lane: 1, z: 73};
+  run.objects = [car, truck];
+  for (let i = 0; i < 80; i++) {
+    const last = car.z;
+    run.advanceTraffic(.05);
+    assert.ok(car.z > last);
+    assert.ok(truck.z - car.z >= 22 - 1e-9);
   }
 });

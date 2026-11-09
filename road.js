@@ -609,6 +609,11 @@ export function createRoad(ctx) {
         const size = object.type === 2 ? .76 : 1.04;
         truck(x, y, vehicleScale * (cinematic ? 1.24 : size), object.type, Math.sign(lane) || 1);
       }
+      if (object.merge && (reducedMotion.matches || Math.floor(object.merge.elapsed * 5) % 2 === 0)) {
+        const side = Math.sign(object.merge.to - object.lane);
+        const lamp = Math.max(2, vehicleScale * 5);
+        ellipse(x + side * 38 * vehicleScale, y - 14 * vehicleScale, lamp, lamp * .55, '#ffbd3d');
+      }
       return;
     }
 

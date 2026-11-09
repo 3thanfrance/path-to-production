@@ -1,6 +1,6 @@
 import * as T from 'three';
 import { CHAINGUARD_OCTOPUS } from './chainguard.js';
-import { lanePosition, obstacleLane, TURBO_SPEED } from './engine.js';
+import { lanePosition, obstacleLane, TURBO_SPEED, MERGE_SIGNAL, MERGE_DURATION } from './engine.js';
 
 const LANE = 3.55;
 const HALF = LANE * 2.5;
@@ -561,7 +561,7 @@ export function createRoad3D(canvas) {
           lift = T.MathUtils.smoothstep(gate.waited, gate.duration - .65, gate.duration);
         } else if (!intro && Math.abs(gate.z - sceneDistance) > 32) {
           for (const vehicle of run.objects) {
-            if (vehicle.kind !== 'hazard' || vehicle.lane !== lane) continue;
+            if (vehicle.kind !== 'hazard' || Math.abs(obstacleLane(vehicle) - lanePosition(lane)) > .19) continue;
             const gap = Math.abs(gate.z - vehicle.z);
             lift = Math.max(lift, 1 - T.MathUtils.smoothstep(gap, 9, 28));
           }
@@ -594,6 +594,22 @@ export function createRoad3D(canvas) {
       }
       const {model} = traffic.get(item);
       model.position.set(obstacleLane(item) * HALF, 0, -relative * DEPTH);
+      if (!model.userData.bug && item.kind === 'hazard') {
+        const merge = item.merge;
+        const progress = merge ? (merge.elapsed - MERGE_SIGNAL) / MERGE_DURATION : 0;
+        const turn = progress > 0 && progress < 1 ? Math.sin(progress * Math.PI) : 0;
+        model.rotation.y = merge ? -Math.sign(merge.to - item.lane) * turn * .18 : 0;
+        const direction = merge ? Math.sign(merge.to - item.lane) : 0;
+        if (direction && !model.userData.indicators) {
+          model.userData.indicators = [-1, 1].map(side =>
+            box(model, amber, side * 1.08, .69, item.type === 3 ? 2.18 : item.type === 2 ? 1.94 : 2.87,
+              .19, .105, .065));
+        }
+        model.userData.indicators?.forEach((lamp, index) => {
+          lamp.visible = direction === (index ? 1 : -1) &&
+            (reducedMotion.matches || Math.floor(merge.elapsed * 5) % 2 === 0);
+        });
+      }
       if (model.userData.wheels && !intro) {
         for (const {axle} of model.userData.wheels) axle.rotation.x = -item.z * DEPTH / .45;
       }

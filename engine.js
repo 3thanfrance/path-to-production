@@ -10,12 +10,20 @@ const MAX_TIME = 60;
 const PLAZA_SPACING = 620;
 const FIRST_PLAZA = 510;
 const PLAZA_APPROACH = 230;
-const VEHICLE_SPEEDS = [25, 30, 35, 41];
+const VEHICLE_SPEEDS = [22, 25, 31, 40];
+const THROUGH_LANE = 2;
+export const MERGE_SIGNAL = .55;
+export const MERGE_DURATION = .85;
+const FOLLOW_GAP = 22;
 
 export const lanePosition = (lane, lanes = LANE_COUNT) => (2 * lane + 1) / lanes - 1;
 
 export function obstacleLane(object) {
   const from = lanePosition(object.lane);
+  if (object.merge) {
+    const t = Math.max(0, Math.min(1, (object.merge.elapsed - MERGE_SIGNAL) / MERGE_DURATION));
+    return from + (lanePosition(object.merge.to) - from) * t * t * (3 - 2 * t);
+  }
   if (object.sweepTo == null) return from;
   // Blink at either end before the bug crosses. Collision and render share this path.
   const phase = (object.phase ?? 0) % 2.8;
@@ -46,7 +54,7 @@ function openingTraffic() {
     { kind: 'deadline', lane: 3, z: 230 },
     { kind: 'gem', lane: 2, z: 263 },
     { kind: 'hazard', type: 1, lane: 0, z: 290 },
-    { kind: 'hazard', type: 2, lane: 2, z: 290 },
+    { kind: 'hazard', type: 2, lane: 1, z: 304 },
     { kind: 'hazard', type: 0, lane: 4, z: 300 },
   ];
 }
@@ -140,21 +148,26 @@ export class Run {
       const openAlternates = Array.from({length: LANE_COUNT}, (_, lane) => lane).filter(lane =>
         lane !== route && (!bugRow || [0, 1, 2, 3].some(start =>
           start !== route && start + 1 !== route && start !== lane && start + 1 !== lane)));
-      const alternate = openAlternates[Math.floor(this.random() * openAlternates.length)];
+      const alternate = route === THROUGH_LANE
+        ? openAlternates[Math.floor(this.random() * openAlternates.length)] : THROUGH_LANE;
       const blocked = Array.from({length: LANE_COUNT}, (_, lane) => lane)
         .filter(lane => lane !== route && lane !== alternate);
       const bugLane = bugRow ? blocked.find(lane => blocked.includes(lane + 1)) : undefined;
-      const speed = 23 + Math.floor(this.random() * 12) + Math.min(5, tier * 2);
+      const rowBias = Math.floor(this.random() * 5) - 2 + Math.min(3, tier);
       if (bugLane !== undefined) {
-        this.objects.push({kind: 'hazard', type: 6, lane: bugLane, sweepTo: bugLane + 1, z, phase: 0, speed});
+        this.objects.push({kind: 'hazard', type: 6, lane: bugLane, sweepTo: bugLane + 1, z, phase: 0, speed: 28 + rowBias});
       }
       let type = Math.floor(this.random() * VEHICLE_SPEEDS.length);
+      const mergePocket = !bugRow && (row === 1 || row === 3)
+        ? blocked.find(lane => blocked.some(other => Math.abs(other - lane) === 1)) : undefined;
       for (let lane = 0; lane < LANE_COUNT; lane++) {
-        if (!blocked.includes(lane) || lane === bugLane || lane === bugLane + 1) continue;
+        if (!blocked.includes(lane) || lane === mergePocket || lane === bugLane || lane === bugLane + 1) continue;
         if (!tier && row === 0 && this.random() < .45) continue;
         this.objects.push({
-          kind: 'hazard', lane, z,
-          type, speed,
+          kind: 'hazard', lane, z: z + (lane - 2) * 7,
+          type, speed: VEHICLE_SPEEDS[type] + rowBias,
+          mergeEligible: type >= 2 && this.random() > .22,
+          protectedLane: route,
         });
         type = (type + 1) % VEHICLE_SPEEDS.length;
       }
@@ -216,6 +229,57 @@ export class Run {
     }
   }
 
+  advanceTraffic(dt) {
+    const vehicles = this.objects.filter(object => object.kind === 'hazard').sort((a, b) => b.z - a.z);
+    const playerLane = this.steering.position;
+    const occupancy = vehicle => [vehicle.lane, vehicle.merge?.to ?? vehicle.sweepTo ?? vehicle.lane];
+    const sharesLane = (vehicle, lane) => occupancy(vehicle).includes(lane);
+    const clearToMerge = (vehicle, lane) => !vehicles.some(other => other !== vehicle &&
+      sharesLane(other, lane) && Math.abs(other.z - vehicle.z) < 43);
+
+    for (let index = 0; index < vehicles.length; index++) {
+      const vehicle = vehicles[index];
+      const distanceAhead = vehicle.z - this.distance;
+      if (vehicle.sweepTo != null && distanceAhead < 135) vehicle.phase += dt;
+      if (vehicle.merge) {
+        const merge = vehicle.merge;
+        if (merge.elapsed < MERGE_SIGNAL && !clearToMerge(vehicle, merge.to)) {
+          vehicle.merge = null;
+        } else {
+          merge.elapsed += dt;
+          if (merge.elapsed >= MERGE_SIGNAL + MERGE_DURATION) {
+            vehicle.lane = merge.to;
+            vehicle.merge = null;
+          }
+        }
+      } else if (vehicle.mergeEligible && distanceAhead > 135 && distanceAhead < 220) {
+        const fromGate = ((vehicle.z - FIRST_PLAZA) % PLAZA_SPACING + PLAZA_SPACING) % PLAZA_SPACING;
+        // Leave a long, predictable approach to the barrier arms.
+        if (fromGate > 108 && fromGate < PLAZA_SPACING - 155) {
+          vehicle.mergeEligible = false;
+          const lanes = [vehicle.lane - 1, vehicle.lane + 1].filter(lane =>
+            lane >= 0 && lane < LANE_COUNT && lane !== THROUGH_LANE && lane !== vehicle.protectedLane &&
+            Math.abs(lanePosition(lane) - playerLane) > .16 && clearToMerge(vehicle, lane));
+          if (lanes.length) vehicle.merge = {to: lanes[0], elapsed: 0};
+        }
+      }
+
+      const freeSpeed = vehicle.speed ?? VEHICLE_SPEEDS[vehicle.type] ?? 30;
+      const nearby = Math.max(0, Math.min(1, (710 - distanceAhead) / 330));
+      let travel = dt * (12 + (freeSpeed - 12) * nearby);
+      const lanes = occupancy(vehicle);
+      for (let leadIndex = 0; leadIndex < index; leadIndex++) {
+        const leader = vehicles[leadIndex];
+        const gap = leader.z - vehicle.z;
+        if (gap > 82 || !lanes.some(lane => sharesLane(leader, lane))) continue;
+        const headwaySpeed = Math.max(7, (leader.speed ?? VEHICLE_SPEEDS[leader.type] ?? 30) + (gap - 43) * .62);
+        travel = Math.min(travel, headwaySpeed * dt, Math.max(0, gap - FOLLOW_GAP));
+        break;
+      }
+      vehicle.z += travel;
+    }
+  }
+
   update(dt, accelerating, braking = false) {
     if (this.over) return;
     this.events = [];
@@ -261,14 +325,9 @@ export class Run {
       }
     }
 
+    this.advanceTraffic(dt);
     const playerLane = this.steering.position;
     for (const object of this.objects) {
-      if (object.kind === 'hazard') {
-        if (object.sweepTo != null && object.z - this.distance < 135) object.phase += dt;
-        const speed = object.speed ?? VEHICLE_SPEEDS[object.type] ?? 30;
-        const nearby = Math.max(0, Math.min(1, (710 - object.z + this.distance) / 330));
-        object.z += dt * (12 + (speed - 12) * nearby);
-      }
       if (held || this.stop || object.hit || object.z < before - 4 || object.z > this.distance + 4) continue;
       if (Math.abs(obstacleLane(object) - playerLane) <= .18) this.collect(object);
     }
