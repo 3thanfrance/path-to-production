@@ -1,12 +1,25 @@
 import {Run, rank, PRODUCTION_DISTANCE, TURBO_SPEED, TURBO_SECONDS} from './engine.js';
 import {createRoad} from './road.js';
-const $=id=>document.getElementById(id),canvas=$('road'),ctx=canvas.getContext('2d');
-const road = createRoad(ctx);
+import {createRoad3D} from './road3d.js';
+const $ = id => document.getElementById(id);
+let canvas = $('road');
+let road;
+let ctx;
+try {
+  if (!window.WebGL2RenderingContext) throw new Error('WebGL 2 unavailable');
+  road = createRoad3D(canvas);
+} catch {
+  const fallback = canvas.cloneNode();
+  canvas.replaceWith(fallback);
+  canvas = fallback;
+  ctx = canvas.getContext('2d');
+  road = createRoad(ctx);
+}
 const METERS_PER_MILE = 1609.344;
 let w=0,h=0,dpr=1,run=new Run(),mode='intro',last=0,visualDistance=0,muted=true,audio,osc,gain,best=0,keys=new Set(),touching=false,pointerStart=null;
 try{best=Number(localStorage.getItem('ptp-best'))||0;}catch{}
 $('best-intro').textContent=`PERSONAL BEST — ${(best/METERS_PER_MILE).toFixed(2)} MI`;
-function resize(){w=canvas.clientWidth;h=canvas.clientHeight;dpr=Math.min(devicePixelRatio||1,2);canvas.width=w*dpr;canvas.height=h*dpr;ctx.setTransform(dpr,0,0,dpr,0,0);road.resize(w,h);}addEventListener('resize',resize);resize();
+function resize(){w=canvas.clientWidth;h=canvas.clientHeight;dpr=Math.min(devicePixelRatio||1,2);if(ctx){canvas.width=w*dpr;canvas.height=h*dpr;ctx.setTransform(dpr,0,0,dpr,0,0);}road.resize(w,h);}addEventListener('resize',resize);resize();
 function sound(type){if(muted||!audio)return;const o=audio.createOscillator(),g=audio.createGain();o.connect(g);g.connect(audio.destination);const t=audio.currentTime;const freq={coin:880,gem:660,boost:1150,deadline:990,toll:523,stop:100,crash:70,end:180}[type]||440;o.type=['stop','crash'].includes(type)?'sawtooth':'sine';o.frequency.setValueAtTime(freq,t);o.frequency.exponentialRampToValueAtTime(type==='toll'?1046:Math.max(40,freq/2),t+.25);g.gain.setValueAtTime(.055,t);g.gain.exponentialRampToValueAtTime(.001,t+.35);o.start(t);o.stop(t+.36);}
 function initAudio(){try{audio??=new (window.AudioContext||window.webkitAudioContext)();audio.resume();if(!osc){osc=audio.createOscillator();gain=audio.createGain();osc.type='triangle';osc.connect(gain);gain.connect(audio.destination);gain.gain.value=0;osc.start();}}catch{}}
 $('mute').onclick=()=>{muted=!muted;if(!muted)initAudio();$('mute').innerHTML=`SOUND ${muted?'OFF':'ON'} <span>⌁</span>`;$('mute').setAttribute('aria-label',muted?'Unmute sound':'Mute sound');};
