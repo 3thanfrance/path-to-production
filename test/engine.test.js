@@ -151,7 +151,7 @@ test('later traffic uses only standard vehicles', () => {
   run.objects = [];
   run.queueTraffic(5000, 9, 2);
   const hazards = run.objects.filter(item => item.kind === 'hazard');
-  assert.ok(hazards.length <= 12);
+  assert.equal(hazards.length, 16);
   assert.ok(hazards.every(item => item.type >= 0 && item.type <= 5));
 });
 
@@ -330,4 +330,19 @@ test('distinct hard hits accumulate damage until the car breaks down', () => {
   assert.equal(run.speed, 0);
   assert.ok(run.time > 0);
   assert.equal(new Run().damage, 0);
+});
+
+test('braking can open a gap during turbo and releasing it restores the surge', () => {
+  const run = new Run();
+  run.objects = [];
+  run.speed = TOP_SPEED;
+  run.collect({kind: 'boost'});
+  assert.ok(run.speed > TOP_SPEED);
+  assert.ok(run.turboKick > 0);
+  for (let i = 0; i < 24; i++) run.update(1 / 60, true, true);
+  assert.ok(run.speed < TOP_SPEED);
+  assert.ok(run.boost > 0);
+  for (let i = 0; i < 36; i++) run.update(1 / 60, true);
+  assert.ok(run.speed > TOP_SPEED);
+  assert.equal(run.turboKick, 0);
 });

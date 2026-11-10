@@ -2,8 +2,8 @@ export const BRAND = Object.freeze({ carOrange: '#FFB310', chainguardPurple: '#a
 export const PRODUCTION_DISTANCE = 2000;
 export const LANE_COUNT = 5;
 export const CRUISE_SPEED = 59;
-export const TOP_SPEED = 76;
-export const TURBO_SPEED = 105;
+export const TOP_SPEED = 84;
+export const TURBO_SPEED = 116;
 export const TURBO_SECONDS = 3.5;
 export const DEADLINE_SECONDS = 6;
 const MAX_TIME = 60;
@@ -137,6 +137,7 @@ export class Run {
     this.messageTime = 0;
     this.spin = 0;
     this.boost = 0;
+    this.turboKick = 0;
     this.events = [];
     this.nextPurple = this.pickNextPurple();
     this.queueTraffic(FIRST_PLAZA, 1, this.purple, this.nextPurple);
@@ -254,7 +255,7 @@ export class Run {
       const first = route !== priorRoute && priorRoute !== nextRoute ? priorRoute : otherLanes.splice(
         Math.floor(this.random() * otherLanes.length), 1)[0];
       const lanes = [first];
-      if ((row + stretch) % (tier >= 2 ? 2 : 3) === 0) {
+      if (tier >= 3 || (row + stretch) % (tier >= 1 ? 2 : 3) === 0) {
         lanes.push(otherLanes[Math.floor(this.random() * otherLanes.length)]);
       }
       // Keep most of the horizon open with low cars, vans and an occasional tall truck.
@@ -310,7 +311,8 @@ export class Run {
     switch (object.kind) {
       case 'boost':
         this.boost = TURBO_SECONDS;
-        this.speed = Math.max(this.speed, TOP_SPEED);
+        this.turboKick = .48;
+        this.speed = Math.max(this.speed, TOP_SPEED + 8);
         this.notify('TURBO ENGAGED', 1.5);
         this.events.push('boost');
         break;
@@ -487,6 +489,7 @@ export class Run {
     this.messageTime = Math.max(0, this.messageTime - dt);
     this.spin = Math.max(0, this.spin - dt);
     this.boost = Math.max(0, this.boost - dt);
+    this.turboKick = this.boost ? Math.max(0, this.turboKick - dt) : 0;
     this.time -= dt;
 
     const held = Math.min(dt, this.stop);
@@ -508,9 +511,9 @@ export class Run {
       this.flow = 0;
       this.speed = 0;
     } else {
-      const target = braking ? 22 : this.boost ? TURBO_SPEED : accelerating ? TOP_SPEED : CRUISE_SPEED;
+      const target = braking ? (this.boost ? 49 : 38) : this.boost ? TURBO_SPEED : accelerating ? TOP_SPEED : CRUISE_SPEED;
       const recoveringTarget = target * (1 - this.spin * .36);
-      const response = braking ? 4.5 : this.boost ? 5.5 : 3.5;
+      const response = braking ? 6.4 : this.boost ? 6 : accelerating ? 4.5 : 3.5;
       this.speed += (recoveringTarget - this.speed) * (1 - Math.exp(-dt * response));
       this.distance += this.speed * dt;
       if (this.speed >= TOP_SPEED - 2 && !this.spin) {

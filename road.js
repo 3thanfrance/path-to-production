@@ -727,7 +727,7 @@ export function createRoad(ctx) {
       ? Math.max(0, Math.min(1, (230 - remaining) / 210)) : 0;
     const velocity = Math.min(1, run.speed / TURBO_SPEED);
     const rush = cinematic || run.stop ? 0 : Math.min(1,
-      velocity * .22 + approach * velocity * .5 + (run.boost ? .6 : 0));
+      velocity * .22 + approach * velocity * .5 + (run.boost ? .68 + run.turboKick * .8 : 0));
     roadHalf = width * (cinematic ? .61 : .465);
     const visualLane = cinematic ? 0 : run.steering.position;
     const steeringForce = cinematic ? 0 : Math.max(-1, Math.min(1, run.steering.velocity / 2.6));
@@ -779,7 +779,7 @@ export function createRoad(ctx) {
       for (const side of [-1, 1]) {
         const x = car.x + side * 45 * scale;
         const y = car.y - 5 * scale;
-        const tail = y + (18 + Math.sin(distance) * 4) * scale;
+        const tail = y + (24 + Math.sin(distance) * 4 + run.turboKick * 22) * scale;
         shape([[x - 5 * scale, y], [x + 5 * scale, y], [x, tail]],
           gradient(0, y, 0, tail, ['#ecffff', '#56deff', '#1468ff00']));
       }

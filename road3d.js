@@ -670,6 +670,8 @@ export function createRoad3D(canvas) {
     const steer = intro ? 0 : run.steering.position;
     const input = reducedMotion.matches ? 0 : T.MathUtils.clamp(run.steering.velocity / 2.6, -1, 1);
     const speed = inMotion ? run.speed / TURBO_SPEED : 0;
+    const turbo = inMotion && run.boost > 0;
+    const surge = turbo ? (run.turboKick / .48) ** 2 : 0;
     const sceneDistance = intro ? 0 : run.distance;
     const gateDistance = intro ? 67 : run.plaza - sceneDistance;
     const open = intro ? 3 : run.purple;
@@ -837,8 +839,8 @@ export function createRoad3D(canvas) {
       const side = particle % 2 ? -1 : 1;
       const fade = 1 - age;
       place(exhaust, particle, player.position.x + side * (.7 + age * .20) - input * age * .36,
-        .25 + age * .24, 2.19 + age * (run.boost ? 3.3 : 1.65), .027 * fade, .026 * fade,
-        (.09 + speed * .19) * fade);
+        .25 + age * .24, 2.19 + age * (turbo ? 4.2 + surge * 1.7 : 1.65), .027 * fade, .026 * fade,
+        (.09 + speed * .19 + surge * .22) * fade);
     }
     exhaust.instanceMatrix.needsUpdate = true;
     const body = player.userData.body;
@@ -859,12 +861,12 @@ export function createRoad3D(canvas) {
     });
     const tall = aspect < .85;
     chaseX += (player.position.x * (tall ? .91 : .57) - chaseX) * (1 - Math.exp(-7.5 * dt));
-    const targetFov = (tall ? 70 : 49) + (reducedMotion.matches ? 0 : speed * 4 + (run.boost && inMotion ? 5 : 0));
-    cameraFov += (targetFov - cameraFov) * (1 - Math.exp(-5 * dt));
+    const targetFov = (tall ? 70 : 49) + (reducedMotion.matches ? 0 : speed * 4 + (turbo ? 7 + surge * 9 : 0));
+    cameraFov += (targetFov - cameraFov) * (1 - Math.exp(-(turbo ? 10 : 5) * dt));
     camera.fov = cameraFov;
     camera.updateProjectionMatrix();
     const cameraZ = tall ? (intro ? 15 : 12.5) : intro ? 11.6 : 8.8;
-    camera.position.set(chaseX + side * kick * .26, (tall ? 5.1 : intro ? 4.35 : 3.95) + kick * .12, cameraZ + kick * .32);
+    camera.position.set(chaseX + side * kick * .26, (tall ? 5.1 : intro ? 4.35 : 3.95) + kick * .12, cameraZ + kick * .32 + (reducedMotion.matches ? 0 : surge * .48));
     camera.lookAt(chaseX * (tall ? .89 : .52) + input * .24, tall ? (intro ? .45 : 1.9) : intro ? .10 : 1.44, -21);
     renderer.render(scene, camera);
   }
