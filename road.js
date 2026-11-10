@@ -795,6 +795,21 @@ export function createRoad(ctx) {
     coupe(car.x, car.y + rumble - (cinematic ? height * .022 : 0), scale,
       [BRAND.carOrange, '#ff691a', '#a82327'], true,
       lean - (impact?.side ?? 0) * (kick * .22 + (run.wrecked ? .14 : 0)), yaw + kick * .18);
+    if (!cinematic && run.damage >= 8) {
+      const x = car.x + run.damageSide * 39 * scale;
+      for (let i = 0; i < Math.min(6, Math.ceil(run.damage / 12)); i++) {
+        line(x - 10 * scale, car.y - (29 + i * 2) * scale,
+          x + 12 * scale, car.y - (34 + i * 2) * scale, i % 2 ? '#cbb8b1' : '#3d2633', 1.6 * scale);
+      }
+      if (run.damage >= 48 && !reducedMotion.matches) {
+        for (let i = 0; i < 9; i++) {
+          const age = (now * .0014 + i * .157) % 1;
+          const size = (3 + age * 10) * scale * run.damage / 100;
+          ellipse(x + Math.sin(i * 4) * age * 9 * scale, car.y - (28 + age * 43) * scale,
+            size, size * .7, `rgba(79,65,88,${(1 - age) * .65})`);
+        }
+      }
+    }
   }
 
   return { resize, draw };

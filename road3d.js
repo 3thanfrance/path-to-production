@@ -597,6 +597,22 @@ export function createRoad3D(canvas) {
 
   const player = sportsCar(0xff591a, true);
   scene.add(player);
+  const damagePanels = [-1, 1].map(side => {
+    const panel = new T.Group();
+    panel.position.x = side * .76;
+    player.userData.body.add(panel);
+    const chips = material(0x3b2632, .95);
+    for (let i = 0; i < 5; i++) {
+      box(panel, i % 2 ? chrome : chips, (i - 2) * .061, .84 - i * .047, 2.192,
+        .32 + i * .038, .020, .024).rotation.z = side * (.15 + i * .045);
+    }
+    const fender = box(panel, chips, side * .23, .58, 2.08, .31, .25, .27);
+    return {panel, fender, side};
+  });
+  const smoke = new T.InstancedMesh(new T.IcosahedronGeometry(1, 0), material(0x4a475a, 1), 20);
+  smoke.frustumCulled = false;
+  smoke.instanceMatrix.setUsage(T.DynamicDrawUsage);
+  scene.add(smoke);
   const jetShape = new T.ConeGeometry(.14, 1.1, 9).rotateX(Math.PI / 2);
   const jets = [-.71, .71].map(x => mesh(player.userData.body, jetShape, blue, x, .32, 2.64));
   const scenery = new Map();
@@ -750,6 +766,22 @@ export function createRoad3D(canvas) {
     }
 
     player.position.x = steer * HALF;
+    const damage = intro ? 0 : run.damage;
+    for (const {panel, fender, side} of damagePanels) {
+      const panelDamage = intro ? 0 : run.panelDamage[side > 0 ? 1 : 0];
+      panel.visible = panelDamage >= 8;
+      fender.visible = panelDamage >= 28;
+      fender.rotation.z = side * panelDamage * .004;
+      fender.rotation.y = side * panelDamage * .003;
+    }
+    smoke.count = damage >= 48 && !reducedMotion.matches ? Math.floor((damage - 40) / 3) : 0;
+    for (let i = 0; i < smoke.count; i++) {
+      const age = (now * .0013 + i * .137) % 1;
+      const size = (.08 + age * .31) * (damage / 100);
+      place(smoke, i, player.position.x + run.damageSide * .50 + Math.sin(i * 3 + age * 4) * age * .38,
+        .68 + age * (1.06 + damage * .008), 1.87 + age * (2.2 + speed * 2), size, size * .82, size);
+    }
+    smoke.instanceMatrix.needsUpdate = true;
     const side = impact?.side ?? 0;
     tireLoad += (input - tireLoad) * (1 - Math.exp(-8 * dt));
     const grip = Math.abs(tireLoad);
@@ -814,7 +846,7 @@ export function createRoad3D(canvas) {
     player.rotation.y = -tireLoad * .14 + side * (kick * .23 + wreck * .50);
     body.rotation.y = 0;
     body.rotation.z = -tireLoad * .14 - side * (kick * .11 + wreck * .13);
-    body.rotation.x = reducedMotion.matches ? 0 : (run.boost ? -.054 : speed * .016) + kick * .19 + wreck * .09;
+    body.rotation.x = reducedMotion.matches ? 0 : (run.boost ? -.054 : speed * .016) + kick * .19 + wreck * .09 + (damage > 70 && inMotion ? Math.sin(sceneDistance * .85) * (damage - 70) * .0007 : 0);
     body.position.y -= grip * .055 + kick * .070;
     for (const {hub, axle, front} of player.userData.wheels) {
       hub.rotation.y = front ? -(input * .24 + (input - tireLoad) * .20) : 0;

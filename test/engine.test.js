@@ -307,3 +307,27 @@ test('toll assist centers the selected lane and yields to a deliberate lane chan
     assert.ok(Math.abs(run.steering.position - lanePosition(3)) < .035);
   }
 });
+
+test('distinct hard hits accumulate damage until the car breaks down', () => {
+  const run = new Run();
+  const crash = () => {
+    run.speed = TURBO_SPEED;
+    run.boost = 2;
+    run.objects = [{kind: 'hazard', type: 3, lane: 2, z: run.distance + 19}];
+    run.update(.05, true);
+    assert.ok(run.events.includes('crash'));
+  };
+  crash();
+  assert.ok(run.damage > 20 && run.damage < 50);
+  assert.ok(!run.over);
+  const firstDamage = run.damage;
+  crash();
+  assert.ok(run.damage > firstDamage && run.damage < 100);
+  crash();
+  assert.equal(run.damage, 100);
+  assert.equal(run.failure, 'breakdown');
+  assert.equal(run.over, true);
+  assert.equal(run.speed, 0);
+  assert.ok(run.time > 0);
+  assert.equal(new Run().damage, 0);
+});

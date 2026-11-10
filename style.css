@@ -246,3 +246,8 @@ em { color: var(--amber); font-style: normal; }
 .pickup-key .purple-key { color: var(--violet); }
 
 #turbo-time { display: block; color: var(--cyan); font-size: 8px; margin-bottom: 3px; }
+
+#condition { display: grid; gap: 3px; margin: 0 0 5px; color: #e5d5ef; font-size: 8px; }
+#condition span { margin: 0; }
+#condition meter { display: block; width: 100%; height: 5px; accent-color: #ffa948; }
+#condition[data-critical="true"] { color: #ff8a9f; }

@@ -1,7 +1,7 @@
 export const BRAND = Object.freeze({ carOrange: '#FFB310', chainguardPurple: '#ad65ff' });
 export const PRODUCTION_DISTANCE = 2000;
 export const LANE_COUNT = 5;
-export const CRUISE_SPEED = 56;
+export const CRUISE_SPEED = 59;
 export const TOP_SPEED = 76;
 export const TURBO_SPEED = 105;
 export const TURBO_SECONDS = 3.5;
@@ -115,6 +115,10 @@ export class Run {
     this.impact = null;
     this.contacts = new Set();
     this.wrecked = false;
+    this.damage = 0;
+    this.damageSide = 1;
+    this.panelDamage = [0, 0];
+    this.failure = null;
     this.pass = false;
     this.stop = 0;
     this.stopTotal = 0;
@@ -324,6 +328,17 @@ export class Run {
     }
   }
 
+  wreck(reason) {
+    this.failure = reason;
+    this.damage = 100;
+    this.speed = 0;
+    this.boost = 0;
+    this.wrecked = true;
+    this.over = true;
+    this.impact.fatal = true;
+    this.events.push('crash', 'end');
+  }
+
   resolveRoadContact(object, contact, motion, dt) {
     const {axis, sign, fraction} = contact;
     const shape = object.kind === 'work' ? WORK_SHAPE : VEHICLE_SHAPES[object.type];
@@ -336,11 +351,9 @@ export class Run {
       this.distance = motion.player.from.z + (this.distance - motion.player.from.z) * fraction;
       this.steering.position = motion.player.from.x + (this.steering.position - motion.player.from.x) * fraction;
       this.impact = {side, force: 1, age: 0, fatal: true};
-      this.speed = 0;
-      this.boost = 0;
-      this.wrecked = true;
-      this.over = true;
-      this.events.push('crash', 'end');
+      this.damageSide = -side;
+      this.panelDamage[this.damageSide > 0 ? 1 : 0] = 100;
+      this.wreck('barrier');
       return;
     }
 
@@ -352,16 +365,25 @@ export class Run {
       this.distance = object.z + sign * separation;
     }
     if (this.contacts.has(object)) return;
-    object.shunt = axis === 'z' ? 8 + force * 19 : 0;
+    object.shunt = axis === 'z' ? -sign * (9 + force * 22) : 0;
     object.deflectSpeed = axis === 'x' ? -sign * (.16 + force * .40) : 0;
     object.bump = {side: -side, force, age: 0};
     this.impact = {side, force: .38 + force * .62, age: 0, fatal: false};
-    this.spin = .42 + force * .33;
-    this.speed *= axis === 'x' ? .87 : .61 - force * .16;
-    this.boost = 0;
+    this.damageSide = -side;
+    const addedDamage = Math.round(axis === 'x' ? 8 + force * 14 : 17 + force * 25);
+    this.damage = Math.min(100, this.damage + addedDamage);
+    this.panelDamage[this.damageSide > 0 ? 1 : 0] += addedDamage;
+    if (this.damage === 100) {
+      this.wreck('breakdown');
+      return;
+    }
+    this.spin = .17 + force * .24;
+    this.speed *= axis === 'x' ? .96 - force * .08 : .78 - force * .17;
+    if (axis === 'z') this.boost = 0;
+    else this.boost = Math.max(0, this.boost - .32);
     this.time -= axis === 'x' ? 1 : 3;
     this.flow = 0;
-    this.notify(axis === 'x' ? 'SIDESWIPE  −1s' : 'IMPACT  −3s', 1.4);
+    this.notify(`${axis === 'x' ? 'SIDESWIPE  −1s' : 'IMPACT  −3s'} · +${addedDamage}% DAMAGE`, 1.35);
     this.events.push('crash');
   }
 
@@ -486,8 +508,10 @@ export class Run {
       this.flow = 0;
       this.speed = 0;
     } else {
-      const target = braking ? 22 : this.spin ? 30 : this.boost ? TURBO_SPEED : accelerating ? TOP_SPEED : CRUISE_SPEED;
-      this.speed += (target - this.speed) * Math.min(1, dt * (braking || this.boost ? 4 : 2.3));
+      const target = braking ? 22 : this.boost ? TURBO_SPEED : accelerating ? TOP_SPEED : CRUISE_SPEED;
+      const recoveringTarget = target * (1 - this.spin * .36);
+      const response = braking ? 4.5 : this.boost ? 5.5 : 3.5;
+      this.speed += (recoveringTarget - this.speed) * (1 - Math.exp(-dt * response));
       this.distance += this.speed * dt;
       if (this.speed >= TOP_SPEED - 2 && !this.spin) {
         this.flow += dt;
