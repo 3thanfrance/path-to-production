@@ -1,9 +1,9 @@
 export const BRAND = Object.freeze({ carOrange: '#FFB310', chainguardPurple: '#ad65ff' });
 export const PRODUCTION_DISTANCE = 2000;
 export const LANE_COUNT = 5;
-export const CRUISE_SPEED = 68;
-export const TOP_SPEED = 94;
-export const TURBO_SPEED = 134;
+export const CRUISE_SPEED = 82;
+export const TOP_SPEED = 111;
+export const TURBO_SPEED = 160;
 export const TURBO_SECONDS = 3.5;
 export const MAX_TURBO_FUEL = 2 * TURBO_SECONDS;
 const TURBO_COAST_SECONDS = .65;
@@ -55,7 +55,7 @@ function sweep(a, b, shapeA, shapeB) {
   return {fraction: Math.max(0, enter), ...(enter < 0 ? overlapNormal : normal)};
 }
 const CONVOY_GAP = 47;
-const GUIDE_LEAD = 23;
+const GUIDE_LEAD = 31;
 export const MERGE_SIGNAL = .55;
 export const MERGE_DURATION = .85;
 const FOLLOW_GAP = 22;
@@ -110,7 +110,7 @@ export class Run {
     this.random = random;
     this.time = 45;
     this.distance = 0;
-    this.speed = 24;
+    this.speed = 35;
     this.lane = 2;
     this.steering = { position: 0, velocity: 0 };
     this.brilliance = 0;
@@ -273,7 +273,7 @@ export class Run {
           protectedExit: exitLane,
         });
       }
-      const pickup = row === 1 ? 'boost' : row === 3 && stretch % 2 === 1 ? 'deadline' : row === 2 ? 'gem' : null;
+      const pickup = row === 1 ? 'boost' : row === 3 && stretch % 2 === 1 ? 'deadline' : row === 2 ? 'gem' : row === 4 && stretch % 6 === 0 ? 'repair' : null;
       this.objects.push({kind: 'guide', lane: route, z: z - GUIDE_LEAD, convoy});
       if (pickup) this.objects.push({kind: pickup, lane: route, z, convoy});
     }
@@ -315,6 +315,15 @@ export class Run {
         this.notify('TURBO CHARGED', 1.2);
         this.events.push('charge');
         break;
+      case 'repair': {
+        const repaired = Math.min(this.damage, 40);
+        const remaining = this.damage ? (this.damage - repaired) / this.damage : 1;
+        this.damage -= repaired;
+        this.panelDamage = this.panelDamage.map(damage => damage * remaining);
+        this.notify(repaired ? `REPAIRED ${repaired}% DAMAGE` : 'CAR IN TOP CONDITION');
+        this.events.push('repair');
+        break;
+      }
       case 'deadline': {
         const added = this.addTime(DEADLINE_SECONDS);
         this.notify(added ? `DEADLINE EXTENDED  +${Math.ceil(added)}s` : 'DEADLINE PICKUP · CLOCK FULL');
@@ -520,7 +529,8 @@ export class Run {
     const starts = new Map(solids.map(item => [item, {x: obstacleLane(item), z: item.z}]));
     if (!held) {
       const target = this.guidedSteering(this.steerTarget ?? lanePosition(this.lane));
-      const response = this.steerTarget === null ? 17 : 16 - 2 * clamp(this.speed / TURBO_SPEED, 0, 1);
+      const response = this.steerTarget === null ? 17 :
+        this.tollGuideLane !== null ? 20 : 16 - 2 * clamp(this.speed / TURBO_SPEED, 0, 1);
       this.steering = stepSteering(start.x, this.steering.velocity, target, dt, response);
       this.steering.position = Math.max(-ROAD_EDGE, Math.min(ROAD_EDGE, this.steering.position));
     }
@@ -533,8 +543,8 @@ export class Run {
       if (!this.spin && !this.stop) this.cleanTime += dt;
       const speedBonus = braking ? 0 : this.cleanSpeedBonus;
       const recoveringTarget = (target + speedBonus) * (1 - this.spin * .36);
-      const drag = 3.2 - 2.2 * (this.turboCoast / TURBO_COAST_SECONDS);
-      const response = braking ? 6.4 : this.boost ? 17 : this.speed > recoveringTarget ? drag : accelerating ? 5.2 : 4.2;
+      const drag = 3.2 - 2.65 * (this.turboCoast / TURBO_COAST_SECONDS);
+      const response = braking ? 6.4 : this.boost ? 22 : this.speed > recoveringTarget ? drag : accelerating ? 7.5 : 6;
       this.speed += (recoveringTarget - this.speed) * (1 - Math.exp(-dt * response));
       this.distance += this.speed * dt;
       if (this.speed >= TOP_SPEED + speedBonus - 2 && !this.spin) {

@@ -21,6 +21,8 @@ export function createRoad(ctx) {
   const drawDistance = 1250;
   let cameraOffset = 0;
   let cameraLane = 0;
+  let trailRun;
+  let lightTrail = [];
   const sprites = new Map();
   const octopus = new Path2D(CHAINGUARD_OCTOPUS);
   const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
@@ -675,10 +677,10 @@ export function createRoad(ctx) {
       for (let i = -3; i <= 3; i++) {
         line(x + i * 11 * size, y - 8 * size, x + (i * 11 + 7) * size, y - 22 * size, '#25172d', 4 * size);
       }
-    } else if (object.kind === 'boost' || object.kind === 'deadline') {
+    } else if (object.kind === 'boost' || object.kind === 'deadline' || object.kind === 'repair') {
       const turbo = object.kind === 'boost';
       const r = 17 * size;
-      const color = turbo ? '#68eaff' : '#a2ff9d';
+      const color = turbo ? '#68eaff' : object.kind === 'repair' ? '#ffd17c' : '#a2ff9d';
       glow(x, floatY, r * 1.9, color, turbo ? '#1f9fffbc' : '#42e878bb');
       ellipse(x, floatY, r, r, '#071b35');
       ctx.strokeStyle = color;
@@ -688,6 +690,10 @@ export function createRoad(ctx) {
         shape([[x + .12 * r, floatY - .73 * r], [x - .51 * r, floatY + .12 * r],
           [x - .03 * r, floatY + .12 * r], [x - .17 * r, floatY + .74 * r],
           [x + .58 * r, floatY - .17 * r], [x + .1 * r, floatY - .17 * r]], color);
+      } else if (object.kind === 'repair') {
+        line(x - r * .44, floatY + r * .48, x + r * .20, floatY - r * .18, color, 3 * size);
+        line(x + r * .20, floatY - r * .18, x + r * .52, floatY - r * .14, color, 2.6 * size);
+        line(x + r * .20, floatY - r * .18, x + r * .15, floatY - r * .53, color, 2.6 * size);
       } else {
         line(x, floatY - r * .54, x, floatY, color, 2 * size);
         line(x, floatY, x + r * .46, floatY + r * .26, color, 2 * size);
@@ -761,6 +767,25 @@ export function createRoad(ctx) {
     }
     const car = project(0, cinematic ? 0 : visualLane);
     const scale = Math.min(width / 685, height / 520);
+    if (trailRun !== run) {
+      trailRun = run;
+      lightTrail = [];
+    }
+    if (mode === 'play' && run.speed > 30 && !reducedMotion.matches) {
+      if (!lightTrail.length || distance - lightTrail.at(-1).z > 1.5) {
+        lightTrail.push({z: distance, lane: visualLane});
+        if (lightTrail.length > 20) lightTrail.shift();
+      }
+      let previous = car;
+      for (const point of [...lightTrail].reverse()) {
+        const age = (distance - point.z) / 24;
+        if (age > 1 || age < 0) break;
+        const next = project((point.z - distance) * .70, point.lane);
+        line(previous.x, previous.y, next.x, next.y, `rgba(37,197,255,${.52 * (1 - age)})`, (run.boost ? 15 : 10) * scale);
+        line(previous.x, previous.y, next.x, next.y, `rgba(166,250,255,${1 - age})`, 3 * scale);
+        previous = next;
+      }
+    }
     const lean = reducedMotion.matches ? 0 : steeringForce * .085;
     const yaw = reducedMotion.matches ? 0 : -steeringForce * .19;
     if (!cinematic && Math.abs(steeringForce) > .10 && run.speed > 18 && !reducedMotion.matches) {

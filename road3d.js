@@ -378,7 +378,7 @@ export function createRoad3D(canvas) {
     return root;
   }
 
-  const tokenMaterials = {gem: neon(0xd676ff), boost: blue, deadline: neon(0x97ffb2)};
+  const tokenMaterials = {gem: neon(0xd676ff), boost: blue, deadline: neon(0x97ffb2), repair: neon(0xffd17c)};
   const tokenShapes = {
     gem: new T.OctahedronGeometry(.39),
     boost: new T.OctahedronGeometry(.36),
@@ -389,7 +389,20 @@ export function createRoad3D(canvas) {
     shadow(root, .98, .98);
     const token = new T.Group();
     root.add(token);
-    mesh(token, tokenShapes[kind], tokenMaterials[kind], 0, 0, 0);
+    if (kind === 'repair') {
+      const tool = new T.Group();
+      tool.rotation.z = -.63;
+      token.add(tool);
+      const metal = tokenMaterials.repair;
+      box(tool, metal, 0, -.08, 0, .12, .59, .095);
+      box(tool, metal, 0, .20, 0, .34, .11, .095);
+      for (const side of [-1, 1]) {
+        box(tool, metal, side * .135, .32, 0, .092, .23, .095).rotation.z = -side * .22;
+      }
+      mesh(tool, new T.TorusGeometry(.080, .035, 8, 14), metal, 0, -.39, 0);
+    } else {
+      mesh(token, tokenShapes[kind], tokenMaterials[kind], 0, 0, 0);
+    }
     halo(token, tokenMaterials[kind].color.getHex(), 0, 0, .13, 1.1, 1.1);
     if (kind === 'deadline') {
       box(token, ink, 0, .085, .074, .048, .18, .035);
@@ -505,6 +518,10 @@ export function createRoad3D(canvas) {
   const debris = new T.InstancedMesh(cube, neon(0xffa844), 96);
   const rubber = new T.InstancedMesh(cube, material(0x20182c, .98), 64);
   const tireDust = new T.InstancedMesh(cube, material(0x695674, .98), 26);
+  const trailCore = new T.InstancedMesh(cube, neon(0x68efff), 40);
+  const trailGlow = new T.InstancedMesh(cube, new T.MeshBasicMaterial({
+    color: 0x00b8ff, transparent: true, opacity: .3, depthWrite: false, blending: T.AdditiveBlending,
+  }), 40);
   const turboStreaks = new T.InstancedMesh(cube, neon(0x5ae8ff), 28);
   const dummy = new T.Object3D();
   for (const instances of [markings, posts, reflectors, arrows]) {
@@ -512,7 +529,7 @@ export function createRoad3D(canvas) {
     instances.instanceMatrix.setUsage(T.DynamicDrawUsage);
     scene.add(instances);
   }
-  for (const instances of [exhaust, debris, tireDust, rubber, turboStreaks]) {
+  for (const instances of [exhaust, debris, tireDust, rubber, turboStreaks, trailCore, trailGlow]) {
     instances.frustumCulled = false;
     instances.instanceMatrix.setUsage(T.DynamicDrawUsage);
     scene.add(instances);
@@ -624,6 +641,7 @@ export function createRoad3D(canvas) {
   let rubberRun;
   let lastTrack = -Infinity;
   let tracks = [];
+  let lightTrail = [];
   let cameraFov = 55;
   let aspect = 1;
 
@@ -800,7 +818,36 @@ export function createRoad3D(canvas) {
     if (rubberRun !== run) {
       rubberRun = run;
       tracks = [];
+      lightTrail = [];
       lastTrack = -Infinity;
+    }
+    if (inMotion && speed > .20 && !reducedMotion.matches &&
+        (!lightTrail.length || sceneDistance - lightTrail.at(-1).z >= 1.2)) {
+      lightTrail.push({x: player.position.x, z: sceneDistance});
+      if (lightTrail.length > 40) lightTrail.shift();
+    }
+    const trail = inMotion && speed > .20 && !reducedMotion.matches
+      ? lightTrail.filter(point => sceneDistance - point.z < 30) : [];
+    trail.push({x: player.position.x, z: sceneDistance});
+    let trailCount = 0;
+    for (let i = 1; i < trail.length; i++) {
+      const a = trail[i - 1];
+      const b = trail[i];
+      const dx = b.x - a.x;
+      const dz = (a.z - b.z) * DEPTH;
+      const length = Math.hypot(dx, dz);
+      if (length < .015) continue;
+      const taper = Math.max(.04, 1 - (sceneDistance - a.z) / 30);
+      const x = (a.x + b.x) / 2;
+      const z = 2.12 + (sceneDistance - (a.z + b.z) / 2) * DEPTH;
+      dummy.rotation.y = Math.atan2(dx, dz);
+      place(trailGlow, trailCount, x, .40, z, .41 * taper, .56 * taper, length + .055);
+      place(trailCore, trailCount++, x, .40, z, .08 * taper, (turbo ? .31 : .18) * taper, length + .025);
+    }
+    dummy.rotation.y = 0;
+    for (const mesh of [trailCore, trailGlow]) {
+      mesh.count = trailCount;
+      mesh.instanceMatrix.needsUpdate = true;
     }
     if (inMotion && sceneDistance - lastTrack > 2.7 && speed > .25 && (grip > .53 || kick > .15)) {
       lastTrack = sceneDistance;

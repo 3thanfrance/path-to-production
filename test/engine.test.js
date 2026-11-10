@@ -257,7 +257,7 @@ test('following the moving pickup trail chains boosts and purple tolls without a
         run.update(dt, accelerate, false, run.turboFuel > 0);
         assert.ok(!run.events.includes('crash'), `seed ${start}, throttle ${accelerate}, crash at ${run.distance}`);
         assert.equal(run.stop, 0, `seed ${start}, toll at ${run.distance}`);
-        const missed = run.objects.find(item => ['boost', 'gem', 'deadline'].includes(item.kind) && !item.hit && item.z < run.distance - 5);
+        const missed = run.objects.find(item => ['boost', 'gem', 'deadline', 'repair'].includes(item.kind) && !item.hit && item.z < run.distance - 5);
         assert.equal(missed, undefined, `seed ${start}, missed ${missed?.kind} at ${missed?.z}`);
         if (run.events.includes('charge')) {
           boosts++;
@@ -404,4 +404,20 @@ test('releasing turbo carries speed without burning fuel, and braking overrides 
   for (let i = 0; i < 12; i++) run.update(1 / 60, false, true);
   assert.ok(run.speed < coastSpeed - 35);
   assert.equal(run.turboFuel, fuel);
+});
+
+test('a rare wrench repairs damage and rolls back the visible wear', () => {
+  const run = new Run(() => .4);
+  run.objects = [];
+  for (let stretch = 1; stretch <= 6; stretch++) {
+    run.queueTraffic(stretch * 620, stretch, 2, 3);
+  }
+  const repairs = run.objects.filter(item => item.kind === 'repair');
+  assert.equal(repairs.length, 1);
+  run.damage = 70;
+  run.panelDamage = [35, 35];
+  run.collect(repairs[0]);
+  assert.equal(run.damage, 30);
+  assert.deepEqual(run.panelDamage, [15, 15]);
+  assert.ok(run.events.includes('repair'));
 });
