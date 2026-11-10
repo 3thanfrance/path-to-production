@@ -254,7 +254,7 @@ export class Run {
         lanes.push(otherLanes[Math.floor(this.random() * otherLanes.length)]);
       }
       // Keep most of the horizon open with low cars, vans and an occasional tall truck.
-      const types = row % 4 === 0 ? [0, 2, 5] : [3, 4, 5];
+      const types = row % 4 === 0 ? [0, 1, 2, 5] : [3, 4, 5];
       const type = types[Math.floor(this.random() * types.length)];
       for (const [index, lane] of lanes.entries()) {
         const alternateType = 3 + (row % 3);

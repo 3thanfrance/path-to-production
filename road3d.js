@@ -6,11 +6,11 @@ const LANE = 3.55;
 const HALF = ROAD_HALF;
 const DEPTH = ROAD_DEPTH;
 const LOOKAHEAD = 1250;
-const TAGS = ['TECHNICAL DEBT', 'LEGACY STACK', 'ONE-OFF BUILD', 'STATUS QUO'];
+const TAGS = ['TECHNICAL DEBT', 'LEGACY STACK', 'ONE-OFF BUILD', 'STATUS QUO', 'HOT FIX', 'NIGHT SHIFT'];
 const CARS = [0x9b4c27, 0x2157c1, 0x9e3274, 0x198dcc, 0x36b99d, 0x975de6];
 const attract = [
   { kind: 'hazard', type: 0, lane: 0, z: 35 },
-  { kind: 'hazard', type: 4, lane: 4, z: 42 },
+  { kind: 'hazard', type: 1, lane: 4, z: 42 },
   { kind: 'hazard', type: 5, lane: 2, z: 74 },
   {kind: 'guide', lane: 3, z: 46},
 ];
@@ -214,67 +214,141 @@ export function createRoad3D(canvas) {
     return root;
   }
 
-  function truck(type, workTruck) {
-    const group = new T.Group();
-    const paint = material(workTruck ? 0x9e591d : CARS[type], .6);
-    const trim = material(type === 0 ? 0xbc9272 : 0x6c96c0, .55);
-    const length = type === 2 ? 3.7 : 5.7;
-    const high = type === 2 ? 2.05 : 2.74;
-    shadow(group, 3.3, length + 1.3, -.35);
-    box(group, ink, 0, .51, 0, 2.48, .32, length);
-    box(group, paint, 0, 1.27, -length / 2 + .1, 2.4, 1.78, 1.38);
-    box(group, glass, 0, 1.74, -length / 2 - .61, 1.91, .51, .025);
-    box(group, paint, 0, high / 2 + .63, .42, 2.53, high - .35, length - 1.08);
-    const rear = length / 2 - .12;
-    for (const x of [-1.19, 0, 1.19]) box(group, trim, x, high / 2 + .63, rear, .08, high - .32, .08);
-    for (const y of [.79, high + .45]) box(group, trim, 0, y, rear, 2.51, .07, .08);
-    for (const x of [-1.22, 1.22]) {
-      for (let j = 0; j < 7; j++) box(group, trim, x, 1 + j * (high - .50) / 7, .44, .07, .035, length - 1.1);
-    }
+  function fleetChassis(width, length, axles) {
+    const root = new T.Group();
+    shadow(root, width + .58, length + 1.12);
+    box(root, ink, 0, .49, 0, width - .17, .26, length - .15);
     const wheels = [];
-    for (const x of [-.92, .92]) {
-      box(group, red, x, .56, rear + .16, .37, .18, .1);
-      for (const z of [-1.6, .87, 1.60]) {
+    for (const side of [-1, 1]) {
+      for (const z of axles) {
+        const hub = new T.Group();
+        hub.position.set(side * (width / 2 - .16), .43, z);
+        root.add(hub);
         const axle = new T.Group();
-        axle.position.set(x * 1.17, .43, z);
-        group.add(axle);
+        hub.add(axle);
         mesh(axle, wheelShape, tire, 0, 0, 0);
         mesh(axle, wheelRim, chrome, 0, 0, 0);
-        mesh(axle, spoke, ink, 0, 0, 0);
-        wheels.push({axle});
+        for (let i = 0; i < 4; i++) mesh(axle, spoke, ink, 0, 0, 0).rotation.x = i * Math.PI / 4;
+        wheels.push({hub, axle, front: z === axles[0]});
       }
     }
-    group.userData.wheels = wheels;
-    if (workTruck) {
-      box(group, ink, 0, high + .48, rear - .48, 1.64, .11, .25);
-      group.userData.workLights = [-.58, .58].map(x =>
-        box(group, amber, x, high + .57, rear - .48, .24, .12, .19));
-      for (let i = -2; i <= 2; i++) {
-        box(group, amber, i * .39, .92, rear + .075, .25, .08, .045).rotation.z = i < 0 ? -.45 : .45;
-      }
+    root.userData.wheels = wheels;
+    return root;
+  }
+
+  function rearBumper(root, rear, width) {
+    box(root, ink, 0, .51, rear, width, .23, .18);
+    box(root, chrome, 0, .42, rear + .11, width - .26, .045, .045);
+    for (const side of [-1, 1]) {
+      box(root, red, side * (width / 2 - .28), .61, rear + .095, .31, .11, .055);
+      box(root, amber, side * (width / 2 - .13), .61, rear + .096, .10, .11, .055);
     }
-    const words = workTruck ? ['ROAD', 'WORK'] : TAGS[type].split(' ');
-    decal(group, words.join('|'), 0, high * .58 + .7, rear + .055, 2.24, 1.05);
-    return group;
+  }
+
+  function truck(type) {
+    const pickup = type === 2;
+    const length = pickup ? 3.62 : 5.46;
+    const rear = length / 2;
+    const root = fleetChassis(2.42, length, pickup ? [-1.16, 1.13] : [-1.95, .89, 1.92]);
+    const paint = material(CARS[type], .48, .26);
+    const cab = -rear + .82;
+    box(root, paint, 0, 1.10, cab, 2.19, .99, 1.48);
+    box(root, glass, 0, 1.66, cab, 2.02, .39, 1.29);
+    box(root, paint, 0, 1.90, cab, 2.16, .14, 1.41);
+    for (const side of [-1, 1]) {
+      box(root, chrome, side * 1.12, 1.15, cab, .065, .075, .35);
+      box(root, ink, side * 1.19, 1.59, cab - .34, .20, .18, .19);
+    }
+    rearBumper(root, rear - .12, 2.43);
+
+    if (type === 0) {
+      const trim = material(0xb3845d, .64, .19);
+      box(root, paint, 0, 1.73, .70, 2.53, 2.19, 3.87);
+      for (const side of [-1, 1]) {
+        for (let z = -1.05; z < 2.55; z += .31) {
+          box(root, trim, side * 1.27, 1.74, z, .048, 2.10, .061);
+        }
+        box(root, trim, side * .61, 1.74, 2.65, 1.12, 2.08, .12);
+        box(root, paint, side * .61, 1.74, 2.72, 1.02, 1.97, .045);
+        box(root, chrome, side * .14, 1.71, 2.76, .04, 1.98, .048);
+        box(root, chrome, side * .29, 1.16, 2.79, .32, .045, .065);
+        for (const y of [.87, 1.69, 2.56]) box(root, trim, side * 1.12, y, 2.75, .26, .09, .08);
+      }
+      decal(root, 'TECHNICAL|DEBT', 0, 1.89, 2.82, 2.02, .78, '#fff0c8', '#49271d');
+    } else if (type === 1) {
+      const steel = material(0x709aba, .32, .54);
+      const barrel = new T.CylinderGeometry(1.04, 1.04, 3.84, 24).rotateX(Math.PI / 2);
+      mesh(root, barrel, steel, 0, 1.66, .63);
+      const cap = new T.SphereGeometry(1, 24, 12);
+      mesh(root, cap, steel, 0, 1.66, 2.48, 1.045, 1.045, .32);
+      const strap = new T.TorusGeometry(1.047, .043, 8, 24);
+      for (const z of [-.91, .20, 1.46, 2.44]) mesh(root, strap, paint, 0, 1.66, z);
+      box(root, ink, 0, 2.73, .40, .56, .14, .53);
+      box(root, chrome, 0, 2.85, .40, .41, .09, .38);
+      for (const x of [-.80, -.56]) box(root, chrome, x, 1.30, 2.66, .043, 1.15, .04);
+      for (const y of [.82, 1.02, 1.22, 1.42, 1.62, 1.82]) {
+        box(root, chrome, -.68, y, 2.68, .24, .039, .044);
+      }
+      box(root, paint, .12, 1.75, 2.79, 1.58, .70, .06);
+      decal(root, 'LEGACY|STACK', .12, 1.75, 2.83, 1.48, .62, '#e3fbff', '#142745');
+      box(root, amber, .32, .96, 2.71, .19, .19, .045).rotation.z = Math.PI / 4;
+    } else {
+      box(root, paint, 0, .79, .83, 2.35, .33, 1.83);
+      for (const side of [-1, 1]) box(root, paint, side * 1.08, 1.03, .83, .21, .35, 1.83);
+      box(root, paint, 0, 1.01, 1.72, 2.33, .37, .15);
+      const rack = material(0x343244, .54, .25);
+      for (const x of [-.48, .48]) {
+        box(root, rack, x, 1.30, .63, .82, 1.02, .87);
+        for (let i = 0; i < 4; i++) {
+          box(root, ink, x, .98 + i * .19, 1.081, .70, .105, .024);
+          box(root, i % 2 ? amber : blue, x + .24, .98 + i * .19, 1.10, .07, .044, .017);
+        }
+        box(root, amber, x, 1.821, .63, .078, .026, .94);
+        box(root, amber, x, 1.31, 1.113, .078, .99, .024);
+      }
+      decal(root, 'ONE-OFF BUILD', 0, 1.02, 1.808, 1.71, .25, '#fff4e2', '#482036');
+    }
+    return root;
   }
 
   function compact(type) {
-    const van = type === 5;
+    if (type === 5) {
+      const root = fleetChassis(2.32, 4.62, [-1.40, 1.32]);
+      const paint = material(CARS[type], .43, .24);
+      mesh(root, loft([[-2.30, .94, .43, .72, .97], [-1.46, 1.13, .45, 1.30, 1.46],
+        [-.78, 1.14, .44, 1.91, 2.01], [1.98, 1.14, .44, 1.91, 2.00],
+        [2.27, 1.08, .47, 1.80, 1.88]]), paint, 0, 0, 0);
+      rearBumper(root, 2.27, 2.20);
+      for (const side of [-1, 1]) {
+        box(root, glass, side * .52, 1.52, 2.285, .90, .38, .032);
+        box(root, chrome, side * .86, 1.98, .47, .06, .075, 2.65);
+        box(root, red, side * 1.02, 1.20, 2.284, .13, .49, .052);
+        box(root, ink, side * 1.143, 1.12, .42, .033, .055, 1.74);
+      }
+      box(root, ink, 0, 1.20, 2.285, .035, 1.13, .037);
+      box(root, chrome, .14, 1.16, 2.31, .17, .041, .054);
+      decal(root, TAGS[type], 0, .89, 2.31, 1.53, .26, '#ffedfc', '#34204c');
+      return root;
+    }
+
     const root = sportsCar(CARS[type]);
     const body = root.userData.body;
-    const paint = material(CARS[type], .43);
-    root.scale.set(van ? .99 : .86, van ? 1.12 : .91, van ? 1.12 : .86);
-    if (van) {
-      box(body, paint, 0, 1.14, .42, 2.13, 1.33, 2.84);
-      box(body, glass, 0, 1.45, 1.87, 1.67, .40, .08);
-      box(body, ink, 0, 1.05, 1.88, .035, 1.05, .09);
-      box(body, chrome, 0, 1.82, .59, 1.51, .068, 2.20);
-      decal(body, 'NIGHT SHIFT', 0, .94, 1.90, 1.49, .26);
+    if (type === 4) {
+      root.scale.set(.86, .99, .86);
+      const paint = material(CARS[type], .38, .28);
+      mesh(body, loft([[-.60, .78, .98, 1.31, 1.45], [.15, .86, .92, 1.44, 1.57],
+        [1.12, .90, .92, 1.37, 1.49], [1.66, .84, .96, 1.16, 1.28]]), paint, 0, 0, 0);
+      box(body, glass, 0, 1.28, 1.57, 1.50, .28, .075).rotation.x = -.39;
+      box(body, ink, 0, 1.49, 1.17, 1.71, .06, .24);
+      box(body, blue, 0, .87, 2.13, 1.52, .044, .04);
     } else {
-      box(body, ink, 0, 1.15, 1.77, 1.94, .076, .34);
-      box(body, ink, 0, 1.005, 2.06, 1.91, .24, .10);
-      box(body, blue, 0, .999, 2.126, 1.42, .046, .03);
+      for (const side of [-1, 1]) {
+        box(body, chrome, side * .82, 1.15, 1.83, .09, .30, .21);
+        box(body, ink, side * .78, 1.34, 1.86, .12, .09, .36);
+      }
+      box(body, ink, 0, 1.36, 1.88, 1.66, .085, .40);
     }
+    decal(body, TAGS[type], 0, .67, 2.183, .76, .22, '#edfaff', '#152337');
     return root;
   }
 
@@ -625,11 +699,10 @@ export function createRoad3D(canvas) {
       if (relative > LOOKAHEAD || relative < -42 || (item.hit && item.kind !== 'hazard')) continue;
       visible.add(item);
       if (!traffic.has(item)) {
-        const key = item.kind === 'hazard' ? 'hazard:' + item.type + (item.workTruck ? ':work' : '') : item.kind;
+        const key = item.kind === 'hazard' ? 'hazard:' + item.type : item.kind;
         const model = pool.get(key)?.pop() ?? (
           item.kind === 'work' ? roadwork() : item.kind === 'guide' ? guide() :
-          item.kind !== 'hazard' ? pickup(item.kind) : item.type < 3 ? truck(item.type, item.workTruck) :
-          item.type === 3 ? sportsCar(CARS[3]) : compact(item.type)
+          item.kind !== 'hazard' ? pickup(item.kind) : item.type < 3 ? truck(item.type) : compact(item.type)
         );
         traffic.set(item, {key, model});
         scene.add(model);
@@ -637,9 +710,6 @@ export function createRoad3D(canvas) {
       const {model} = traffic.get(item);
       model.position.set(obstacleLane(item) * HALF, 0, -relative * DEPTH);
       if (item.kind === 'hazard') {
-        model.userData.workLights?.forEach((lamp, index) => {
-          lamp.visible = reducedMotion.matches || (Math.floor(now / 250) + index) % 2 === 0;
-        });
         const merge = item.merge;
         const progress = merge ? (merge.elapsed - MERGE_SIGNAL) / MERGE_DURATION : 0;
         const turn = progress > 0 && progress < 1 ? Math.sin(progress * Math.PI) : 0;
@@ -655,7 +725,7 @@ export function createRoad3D(canvas) {
         const direction = merge ? Math.sign(merge.to - item.lane) : 0;
         if (direction && !model.userData.indicators) {
           model.userData.indicators = [-1, 1].map(side =>
-            box(model, amber, side * 1.08, .69, item.type === 3 ? 2.18 : item.type === 2 ? 1.94 : 2.87,
+            box(model, amber, side * 1.08, .69, [2.76, 2.76, 1.82, 2.18, 2.18, 2.35][item.type],
               .19, .105, .065));
         }
         model.userData.indicators?.forEach((lamp, index) => {

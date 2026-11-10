@@ -10,7 +10,7 @@ const TRAFFIC = [
 
 const ATTRACT_TRAFFIC = [
   { kind: 'hazard', type: 0, lane: 0, z: 27 },
-  { kind: 'hazard', type: 4, lane: 4, z: 19 },
+  { kind: 'hazard', type: 1, lane: 4, z: 25 },
   { kind: 'hazard', type: 5, lane: 2, z: 75 },
   {kind: 'guide', lane: 3, z: 46},
 ];
@@ -484,10 +484,8 @@ export function createRoad(ctx) {
     for (let i = 0; i < 7; i++) line(-14 + i * 4.6, -6, -14 + i * 4.6, -3, '#82637c');
   }
 
-  function paintTruck(type, side, workTruck) {
-    const { label, colors: [light, body, dark] } = workTruck
-      ? {label: ['ROAD', 'WORK'], colors: ['#e6b466', '#a56028', '#432521']} : TRAFFIC[type];
-    if (workTruck) for (const x of [-30, 30]) glow(x, -105, 8, '#fff1a4', '#ff9d17');
+  function paintTruck(type, side) {
+    const {label, colors: [light, body, dark]} = TRAFFIC[type];
     const sideWidth = -side * (type === 2 ? 26 : 47);
     const nose = -side * 57;
     ellipse(sideWidth * .4, -1, 74, 12, '#02051ba6');
@@ -542,6 +540,58 @@ export function createRoad(ctx) {
     });
   }
 
+  function fleetLabel(label, y, width, font = 11) {
+    box(-width / 2, y - 10, width, 14, 2, '#15152c', '#8da1b5');
+    ctx.fillStyle = '#fff4dc';
+    ctx.textAlign = 'center';
+    ctx.font = `900 ${font}px Arial`;
+    ctx.fillText(label, 0, y, width - 5);
+  }
+
+  function paintFleet(type, side) {
+    if (type === 0) {
+      paintTruck(type, side);
+      return;
+    }
+    ellipse(0, -2, 64, 11, '#02051b99');
+    for (const x of [-45, 45]) wheel(x, -19, 18, 31);
+    if (type === 1) {
+      const offset = -side * 31;
+      ellipse(offset * .88, -60, 42, 46, '#355275');
+      box(Math.min(0, offset), -105, Math.abs(offset) + 2, 90, 2, '#719fb8');
+      ellipse(0, -60, 46, 46, gradient(-36, -108, 28, -20, ['#cce8ee', '#5a86ac', '#172e57']));
+      ellipse(0, -60, 39, 40, '#50799b');
+      for (const x of [-35, -26]) line(x, -60, x, -23, '#c0dfed', 2);
+      for (let y = -58; y <= -25; y += 6) line(-35, y, -26, y, '#c0dfed', 1.5);
+      fleetLabel('LEGACY STACK', -61, 78);
+    } else if (type === 2) {
+      box(-43 - side * 8, -76, 86, 56, 8, '#802c62', '#e998cf', 2);
+      box(-34 - side * 8, -70, 68, 22, 4, '#1b3758', '#805dc6');
+      for (const x of [-30, 1]) {
+        box(x, -57, 28, 33, 2, '#28243b', '#9c84ae');
+        for (let y = -53; y < -31; y += 7) {
+          box(x + 3, y, 22, 3, 1, '#0b152b');
+          box(x + 19, y, 3, 2, 1, '#77edff');
+        }
+        line(x + 11, -57, x + 11, -25, '#f9b343', 2);
+      }
+      box(-49, -33, 98, 21, 3, '#a7417f', '#f5a6d3');
+      fleetLabel('ONE-OFF BUILD', -21, 78);
+    } else {
+      shape([[-52, -15], [-50, -76], [-42, -93], [39, -93], [50, -78], [53, -15]],
+        gradient(0, -96, 0, -16, ['#a88de8', '#60398e', '#271b49']), '#b290e8', 2);
+      for (const x of [-37, 4]) box(x, -76, 33, 23, 3, '#172646', '#7796ce');
+      line(0, -88, 0, -20, '#2f214d', 2);
+      for (const x of [-44, 43]) {
+        box(x, -58, 6, 30, 2, '#f64265', '#f9a0b0');
+        line(x, -92, x + 2, -100, '#ae9cc0', 3);
+      }
+      fleetLabel('NIGHT SHIFT', -36, 78);
+    }
+    box(-50, -15, 100, 9, 3, '#21192c', '#806787');
+    for (const x of [-40, 40]) glow(x, -15, 8, '#ffdb82', '#ee2f42');
+  }
+
   // Paint each vehicle once at sprite resolution, then composite it at road depth.
   function drawSprite(key, painter, x, y, scale, tilt = 0, widthScale = 1, yaw = 0) {
     if (!sprites.has(key)) {
@@ -567,8 +617,8 @@ export function createRoad(ctx) {
     drawSprite(player ? 'player' : `coupe:${paint[0]}`, () => paintCoupe(paint, player), x, y, scale, tilt, 1, yaw);
   }
 
-  function truck(x, y, scale, type, side, workTruck) {
-    drawSprite(`truck:${type}:${side}:${Boolean(workTruck)}`, () => paintTruck(type, side, workTruck), x, y, scale, 0, .84);
+  function fleet(x, y, scale, type, side) {
+    drawSprite(`fleet:${type}:${side}`, () => paintFleet(type, side), x, y, scale, 0, .84);
   }
 
   function item(object, distance, now, cinematic) {
@@ -590,15 +640,15 @@ export function createRoad(ctx) {
       if (object.type === 3 || object.type === 4) {
         const colors = object.type === 3 ? TRAFFIC[3].colors : ['#79ffe7', '#22a88e', '#173a42'];
         coupe(x, y, vehicleScale * (object.type === 4 ? .57 : .64), colors, false, bump * .13);
-        if (object.type === 3 && !cinematic && scale > .43) {
+        if (!cinematic && scale > .54) {
           ctx.font = 'bold 10px monospace';
           ctx.textAlign = 'center';
           ctx.fillStyle = '#e0f5ff';
-          ctx.fillText('STATUS QUO', x, y - 68 * vehicleScale);
+          ctx.fillText(object.type === 3 ? 'STATUS QUO' : 'HOT FIX', x, y - 61 * vehicleScale);
         }
       } else {
         const size = object.type === 2 ? .76 : 1.04;
-        truck(x, y, vehicleScale * (cinematic ? 1.24 : size), object.type === 5 ? 2 : object.type, Math.sign(lane) || 1, object.workTruck);
+        fleet(x, y, vehicleScale * (cinematic ? 1.16 : size), object.type, Math.sign(lane) || 1);
       }
       if (object.merge && (reducedMotion.matches || Math.floor(object.merge.elapsed * 5) % 2 === 0)) {
         const side = Math.sign(object.merge.to - object.lane);
