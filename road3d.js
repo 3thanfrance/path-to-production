@@ -1,6 +1,6 @@
 import * as T from 'three';
 import { CHAINGUARD_OCTOPUS } from './chainguard.js';
-import { lanePosition, obstacleLane, ROAD_HALF, ROAD_DEPTH, TURBO_SPEED, MERGE_SIGNAL, MERGE_DURATION } from './engine.js';
+import { BRAND, lanePosition, obstacleLane, ROAD_HALF, ROAD_DEPTH, TURBO_SPEED, MERGE_SIGNAL, MERGE_DURATION } from './engine.js';
 
 const LANE = 3.55;
 const HALF = ROAD_HALF;
@@ -518,10 +518,11 @@ export function createRoad3D(canvas) {
   const debris = new T.InstancedMesh(cube, neon(0xffa844), 96);
   const rubber = new T.InstancedMesh(cube, material(0x20182c, .98), 64);
   const tireDust = new T.InstancedMesh(cube, material(0x695674, .98), 26);
-  const trailCore = new T.InstancedMesh(cube, neon(0x68efff), 40);
+  const trailCore = new T.InstancedMesh(cube, neon(0xe4baff), 96);
   const trailGlow = new T.InstancedMesh(cube, new T.MeshBasicMaterial({
-    color: 0x00b8ff, transparent: true, opacity: .3, depthWrite: false, blending: T.AdditiveBlending,
-  }), 40);
+    color: BRAND.chainguardPurple, transparent: true, opacity: .62, depthWrite: false,
+    toneMapped: false, blending: T.AdditiveBlending,
+  }), 96);
   const turboStreaks = new T.InstancedMesh(cube, neon(0x5ae8ff), 28);
   const dummy = new T.Object3D();
   for (const instances of [markings, posts, reflectors, arrows]) {
@@ -642,6 +643,10 @@ export function createRoad3D(canvas) {
   let lastTrack = -Infinity;
   let tracks = [];
   let lightTrail = [];
+  let trailView = 0;
+  const trailAxis = new T.Vector3(0, 0, 1);
+  const trailDirection = new T.Vector3();
+  const tailLights = [new T.Vector3(), new T.Vector3()];
   let cameraFov = 55;
   let aspect = 1;
 
@@ -821,34 +826,6 @@ export function createRoad3D(canvas) {
       lightTrail = [];
       lastTrack = -Infinity;
     }
-    if (inMotion && speed > .20 && !reducedMotion.matches &&
-        (!lightTrail.length || sceneDistance - lightTrail.at(-1).z >= 1.2)) {
-      lightTrail.push({x: player.position.x, z: sceneDistance});
-      if (lightTrail.length > 40) lightTrail.shift();
-    }
-    const trail = inMotion && speed > .20 && !reducedMotion.matches
-      ? lightTrail.filter(point => sceneDistance - point.z < 30) : [];
-    trail.push({x: player.position.x, z: sceneDistance});
-    let trailCount = 0;
-    for (let i = 1; i < trail.length; i++) {
-      const a = trail[i - 1];
-      const b = trail[i];
-      const dx = b.x - a.x;
-      const dz = (a.z - b.z) * DEPTH;
-      const length = Math.hypot(dx, dz);
-      if (length < .015) continue;
-      const taper = Math.max(.04, 1 - (sceneDistance - a.z) / 30);
-      const x = (a.x + b.x) / 2;
-      const z = 2.12 + (sceneDistance - (a.z + b.z) / 2) * DEPTH;
-      dummy.rotation.y = Math.atan2(dx, dz);
-      place(trailGlow, trailCount, x, .40, z, .41 * taper, .56 * taper, length + .055);
-      place(trailCore, trailCount++, x, .40, z, .08 * taper, (turbo ? .31 : .18) * taper, length + .025);
-    }
-    dummy.rotation.y = 0;
-    for (const mesh of [trailCore, trailGlow]) {
-      mesh.count = trailCount;
-      mesh.instanceMatrix.needsUpdate = true;
-    }
     if (inMotion && sceneDistance - lastTrack > 2.7 && speed > .25 && (grip > .53 || kick > .15)) {
       lastTrack = sceneDistance;
       tracks.push({x: player.position.x, z: sceneDistance});
@@ -916,14 +893,58 @@ export function createRoad3D(canvas) {
       jet.scale.z = run.boost ? (reducedMotion.matches ? .8 : 1 + Math.sin(sceneDistance * .81 + i) * .24) : .27;
       jet.position.z = run.boost ? 2.64 : 2.27;
     });
+    const trailActive = inMotion && speed > .20 && !reducedMotion.matches;
+    let trailCount = 0;
+    if (trailActive) {
+      const reach = turbo ? 68 : 45;
+      const lights = tailLights.map((light, i) => {
+        body.localToWorld(light.set(i ? .70 : -.70, .69, 2.20));
+        return {x: light.x, y: light.y, z: light.z - sceneDistance * DEPTH};
+      });
+      while (lightTrail.length && lightTrail.at(-1).distance > sceneDistance) lightTrail.pop();
+      const samples = [...lightTrail, {distance: sceneDistance, lights}];
+      for (let i = samples.length - 1; i > 0; i--) {
+        const older = samples[i - 1];
+        const newer = samples[i];
+        const age = (sceneDistance - older.distance) / reach;
+        if (age >= 1) break;
+        const taper = Math.sqrt(1 - age);
+        for (let lamp = 0; lamp < 2; lamp++) {
+          const a = older.lights[lamp];
+          const b = newer.lights[lamp];
+          trailDirection.set(a.x - b.x, a.y - b.y, a.z - b.z);
+          const length = trailDirection.length();
+          if (length < .015) continue;
+          dummy.quaternion.setFromUnitVectors(trailAxis, trailDirection.multiplyScalar(1 / length));
+          const x = (a.x + b.x) / 2;
+          const y = (a.y + b.y) / 2;
+          const z = (a.z + b.z) / 2 + sceneDistance * DEPTH;
+          const width = (turbo ? .69 : .49) * taper;
+          place(trailGlow, trailCount, x, y, z, width, width * 1.13, length + .045);
+          place(trailCore, trailCount++, x, y, z, (turbo ? .15 : .10) * taper, width * .48, length + .025);
+        }
+      }
+      dummy.quaternion.identity();
+      if (!lightTrail.length || sceneDistance - lightTrail.at(-1).distance >= 1.6) {
+        lightTrail.push({distance: sceneDistance, lights});
+        if (lightTrail.length > 48) lightTrail.shift();
+      }
+    } else {
+      lightTrail = [];
+    }
+    for (const mesh of [trailCore, trailGlow]) {
+      mesh.count = trailCount;
+      mesh.instanceMatrix.needsUpdate = true;
+    }
+    trailView += ((trailActive ? (turbo ? 1 : .52) : 0) - trailView) * (1 - Math.exp(-6 * dt));
     const tall = aspect < .85;
     chaseX += (player.position.x * (tall ? .91 : .57) - chaseX) * (1 - Math.exp(-7.5 * dt));
     const targetFov = (tall ? 70 : 49) + (reducedMotion.matches ? 0 : speed * 4 + (turbo ? 7 + surge * 12 : 0));
     cameraFov += (targetFov - cameraFov) * (1 - Math.exp(-(turbo ? 17 : 7) * dt));
     camera.fov = cameraFov;
     camera.updateProjectionMatrix();
-    const cameraZ = tall ? (intro ? 15 : 12.5) : intro ? 11.6 : 8.8;
-    camera.position.set(chaseX + side * kick * .26, (tall ? 5.1 : intro ? 4.35 : 3.95) + kick * .12, cameraZ + kick * .32 + (reducedMotion.matches ? 0 : surge * .79));
+    const cameraZ = (tall ? (intro ? 15 : 12.5) : intro ? 11.6 : 8.8) + trailView * 2.7;
+    camera.position.set(chaseX + side * kick * .26, (tall ? 5.1 : intro ? 4.35 : 3.95) + trailView * .66 + kick * .12, cameraZ + kick * .32 + (reducedMotion.matches ? 0 : surge * .79));
     camera.lookAt(chaseX * (tall ? .89 : .52) + input * .24, tall ? (intro ? .45 : 1.9) : intro ? .10 : 1.44, -21);
     renderer.render(scene, camera);
   }

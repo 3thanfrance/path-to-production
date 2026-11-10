@@ -774,17 +774,29 @@ export function createRoad(ctx) {
     if (mode === 'play' && run.speed > 30 && !reducedMotion.matches) {
       if (!lightTrail.length || distance - lightTrail.at(-1).z > 1.5) {
         lightTrail.push({z: distance, lane: visualLane});
-        if (lightTrail.length > 20) lightTrail.shift();
+        if (lightTrail.length > 42) lightTrail.shift();
       }
-      let previous = car;
-      for (const point of [...lightTrail].reverse()) {
-        const age = (distance - point.z) / 24;
-        if (age > 1 || age < 0) break;
-        const next = project((point.z - distance) * .70, point.lane);
-        line(previous.x, previous.y, next.x, next.y, `rgba(37,197,255,${.52 * (1 - age)})`, (run.boost ? 15 : 10) * scale);
-        line(previous.x, previous.y, next.x, next.y, `rgba(166,250,255,${1 - age})`, 3 * scale);
-        previous = next;
+      const reach = run.boost ? 62 : 43;
+      for (const side of [-1, 1]) {
+        let previous = {x: car.x + side * 49 * scale, y: car.y - 27 * scale};
+        for (let i = lightTrail.length - 1; i >= 0; i--) {
+          const point = lightTrail[i];
+          const age = (distance - point.z) / reach;
+          if (age >= 1 || age < 0) break;
+          const road = project((point.z - distance) * .32, point.lane);
+          const next = {x: road.x + side * 49 * scale * road.scale, y: road.y - 27 * scale * road.scale};
+          const taper = Math.sqrt(1 - age);
+          ctx.save();
+          ctx.globalAlpha *= .64 * taper;
+          line(previous.x, previous.y, next.x, next.y, BRAND.chainguardPurple, (run.boost ? 20 : 14) * scale * taper);
+          ctx.globalAlpha = taper;
+          line(previous.x, previous.y, next.x, next.y, '#e4baff', (run.boost ? 5 : 3.5) * scale * taper);
+          ctx.restore();
+          previous = next;
+        }
       }
+    } else {
+      lightTrail = [];
     }
     const lean = reducedMotion.matches ? 0 : steeringForce * .085;
     const yaw = reducedMotion.matches ? 0 : -steeringForce * .19;
