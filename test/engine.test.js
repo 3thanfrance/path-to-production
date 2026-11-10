@@ -387,3 +387,21 @@ test('turbo stays banked while clean speed builds, and an impact resets clean sp
   assert.equal(run.boost, false);
   assert.equal(run.turboFuel, remaining);
 });
+
+test('releasing turbo carries speed without burning fuel, and braking overrides the coast', () => {
+  const run = new Run();
+  run.objects = [];
+  run.speed = TOP_SPEED;
+  run.collect({kind: 'boost'});
+  for (let i = 0; i < 9; i++) run.update(1 / 60, false, false, true);
+  const releaseSpeed = run.speed;
+  const fuel = run.turboFuel;
+  for (let i = 0; i < 12; i++) run.update(1 / 60, false);
+  assert.ok(run.speed > releaseSpeed - 17);
+  assert.equal(run.boost, false);
+  assert.equal(run.turboFuel, fuel);
+  const coastSpeed = run.speed;
+  for (let i = 0; i < 12; i++) run.update(1 / 60, false, true);
+  assert.ok(run.speed < coastSpeed - 35);
+  assert.equal(run.turboFuel, fuel);
+});

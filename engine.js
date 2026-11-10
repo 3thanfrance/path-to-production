@@ -6,6 +6,7 @@ export const TOP_SPEED = 94;
 export const TURBO_SPEED = 134;
 export const TURBO_SECONDS = 3.5;
 export const MAX_TURBO_FUEL = 2 * TURBO_SECONDS;
+const TURBO_COAST_SECONDS = .65;
 export const DEADLINE_SECONDS = 6;
 const MAX_TIME = 60;
 const PLAZA_SPACING = 620;
@@ -138,6 +139,7 @@ export class Run {
     this.messageTime = 0;
     this.spin = 0;
     this.boost = false;
+    this.turboCoast = 0;
     this.turboFuel = 0;
     this.cleanTime = 0;
     this.turboKick = 0;
@@ -206,6 +208,7 @@ export class Run {
     this.stop = 8;
     this.speed = 0;
     this.boost = false;
+    this.turboCoast = 0;
     this.tollLost += this.stop;
     this.notify('VERIFICATION IN PROGRESS');
     this.events.push('stop');
@@ -332,6 +335,7 @@ export class Run {
     this.damage = 100;
     this.speed = 0;
     this.boost = false;
+    this.turboCoast = 0;
     this.wrecked = true;
     this.over = true;
     this.impact.fatal = true;
@@ -380,6 +384,7 @@ export class Run {
     this.spin = .17 + force * .24;
     this.speed *= axis === 'x' ? .96 - force * .08 : .78 - force * .17;
     this.boost = false;
+    this.turboCoast = 0;
     this.time -= axis === 'x' ? 1 : 3;
     this.flow = 0;
     this.notify(`${axis === 'x' ? 'SIDESWIPE  −1s' : 'IMPACT  −3s'} · +${addedDamage}% DAMAGE`, 1.35);
@@ -489,6 +494,13 @@ export class Run {
     const burn = turboHeld && !this.stop && !this.spin ? Math.min(dt, this.turboFuel) : 0;
     this.boost = burn > 0;
     this.turboFuel = Math.max(0, this.turboFuel - burn);
+    if (braking || this.boost || this.stop || this.spin) {
+      this.turboCoast = 0;
+    } else if (wasBoosting) {
+      this.turboCoast = TURBO_COAST_SECONDS;
+    } else {
+      this.turboCoast = Math.max(0, this.turboCoast - dt);
+    }
     this.turboKick = this.boost ? Math.max(0, this.turboKick - dt) : 0;
     if (this.boost && !wasBoosting) {
       this.turboKick = .48;
@@ -521,7 +533,8 @@ export class Run {
       if (!this.spin && !this.stop) this.cleanTime += dt;
       const speedBonus = braking ? 0 : this.cleanSpeedBonus;
       const recoveringTarget = (target + speedBonus) * (1 - this.spin * .36);
-      const response = braking ? 6.4 : this.boost ? 17 : this.speed > recoveringTarget ? 3.2 : accelerating ? 5.2 : 4.2;
+      const drag = 3.2 - 2.2 * (this.turboCoast / TURBO_COAST_SECONDS);
+      const response = braking ? 6.4 : this.boost ? 17 : this.speed > recoveringTarget ? drag : accelerating ? 5.2 : 4.2;
       this.speed += (recoveringTarget - this.speed) * (1 - Math.exp(-dt * response));
       this.distance += this.speed * dt;
       if (this.speed >= TOP_SPEED + speedBonus - 2 && !this.spin) {
