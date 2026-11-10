@@ -787,10 +787,10 @@ export function createRoad(ctx) {
           const next = {x: road.x + side * 49 * scale * road.scale, y: road.y - 27 * scale * road.scale};
           const taper = Math.sqrt(1 - age);
           ctx.save();
-          ctx.globalAlpha *= .64 * taper;
-          line(previous.x, previous.y, next.x, next.y, BRAND.chainguardPurple, (run.boost ? 20 : 14) * scale * taper);
+          ctx.globalAlpha *= .36 * taper;
+          line(previous.x, previous.y, next.x, next.y, BRAND.chainguardPurple, (run.boost ? 9 : 6) * scale * taper);
           ctx.globalAlpha = taper;
-          line(previous.x, previous.y, next.x, next.y, '#e4baff', (run.boost ? 5 : 3.5) * scale * taper);
+          line(previous.x, previous.y, next.x, next.y, '#e4baff', (run.boost ? 2.2 : 1.5) * scale * taper);
           ctx.restore();
           previous = next;
         }

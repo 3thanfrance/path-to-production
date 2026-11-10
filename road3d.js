@@ -520,7 +520,7 @@ export function createRoad3D(canvas) {
   const tireDust = new T.InstancedMesh(cube, material(0x695674, .98), 26);
   const trailCore = new T.InstancedMesh(cube, neon(0xe4baff), 96);
   const trailGlow = new T.InstancedMesh(cube, new T.MeshBasicMaterial({
-    color: BRAND.chainguardPurple, transparent: true, opacity: .62, depthWrite: false,
+    color: BRAND.chainguardPurple, transparent: true, opacity: .34, depthWrite: false,
     toneMapped: false, blending: T.AdditiveBlending,
   }), 96);
   const turboStreaks = new T.InstancedMesh(cube, neon(0x5ae8ff), 28);
@@ -919,9 +919,9 @@ export function createRoad3D(canvas) {
           const x = (a.x + b.x) / 2;
           const y = (a.y + b.y) / 2;
           const z = (a.z + b.z) / 2 + sceneDistance * DEPTH;
-          const width = (turbo ? .69 : .49) * taper;
-          place(trailGlow, trailCount, x, y, z, width, width * 1.13, length + .045);
-          place(trailCore, trailCount++, x, y, z, (turbo ? .15 : .10) * taper, width * .48, length + .025);
+          const width = (turbo ? .29 : .20) * taper;
+          place(trailGlow, trailCount, x, y, z, width, width * .72, length + .02);
+          place(trailCore, trailCount++, x, y, z, (turbo ? .062 : .043) * taper, width * .23, length + .015);
         }
       }
       dummy.quaternion.identity();
