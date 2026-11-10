@@ -61,8 +61,10 @@ test('five lanes are usable at the start and remain available after tolls', () =
 test('opening turbo accelerates the car and the deadline pickup adds six seconds', () => {
   const run = new Run();
   run.move(-1);
-  while (!run.boost && !run.over) run.update(1 / 60, false);
-  assert.ok(run.events.includes('boost'));
+  while (!run.turboCharges && !run.over) run.update(1 / 60, false);
+  assert.ok(run.events.includes('charge'));
+  assert.equal(run.boost, 0);
+  assert.ok(run.activateTurbo());
   while (run.distance < 155 && !run.over) run.update(1 / 60, false);
   run.move(1);
   while (run.distance < 199 && !run.over) run.update(1 / 60, false);
@@ -258,7 +260,10 @@ test('following the moving pickup trail chains boosts and purple tolls without a
         assert.equal(run.stop, 0, `seed ${start}, toll at ${run.distance}`);
         const missed = run.objects.find(item => ['boost', 'gem', 'deadline'].includes(item.kind) && !item.hit && item.z < run.distance - 5);
         assert.equal(missed, undefined, `seed ${start}, missed ${missed?.kind} at ${missed?.z}`);
-        boosts += Number(run.events.includes('boost'));
+        if (run.events.includes('charge')) {
+          boosts++;
+          run.activateTurbo();
+        }
       }
       assert.equal(run.plazaIndex, 9);
       assert.equal(boosts, 9);
@@ -341,6 +346,7 @@ test('braking can open a gap during turbo and releasing it restores the surge', 
   run.objects = [];
   run.speed = TOP_SPEED;
   run.collect({kind: 'boost'});
+  assert.ok(run.activateTurbo());
   assert.ok(run.speed > TOP_SPEED);
   assert.ok(run.turboKick > 0);
   for (let i = 0; i < 24; i++) run.update(1 / 60, true, true);
@@ -358,4 +364,24 @@ test('launch gives the driver an immediate opening decision', () => {
   for (let tick = 0; tick < 150 && !run.over; tick++) run.update(dt, false);
   assert.equal(run.failure, 'barrier');
   assert.ok(run.distance < 126);
+});
+
+test('turbo stays banked while clean speed builds, and an impact resets clean speed', () => {
+  const run = new Run();
+  run.objects = [];
+  run.plaza = 1e9;
+  for (let i = 0; i < 3; i++) run.collect({kind: 'boost'});
+  for (let i = 0; i < 720; i++) run.update(1 / 60, true);
+  assert.equal(run.turboCharges, 2);
+  assert.equal(run.boost, 0);
+  assert.ok(run.speed > TOP_SPEED + 5);
+  assert.ok(run.activateTurbo());
+  assert.ok(!run.activateTurbo());
+  assert.equal(run.turboCharges, 1);
+  run.objects = [{kind: 'hazard', type: 3, lane: 2, z: run.distance + 17}];
+  run.update(.05, true);
+  assert.ok(run.events.includes('crash'));
+  assert.equal(run.cleanSpeedBonus, 0);
+  assert.equal(run.boost, 0);
+  assert.equal(run.turboCharges, 1);
 });

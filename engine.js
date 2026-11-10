@@ -5,6 +5,7 @@ export const CRUISE_SPEED = 68;
 export const TOP_SPEED = 94;
 export const TURBO_SPEED = 125;
 export const TURBO_SECONDS = 3.5;
+export const MAX_TURBO_CHARGES = 2;
 export const DEADLINE_SECONDS = 6;
 const MAX_TIME = 60;
 const PLAZA_SPACING = 620;
@@ -137,6 +138,8 @@ export class Run {
     this.messageTime = 0;
     this.spin = 0;
     this.boost = 0;
+    this.turboCharges = 0;
+    this.cleanTime = 0;
     this.turboKick = 0;
     this.events = [];
     this.nextPurple = this.pickNextPurple();
@@ -176,6 +179,20 @@ export class Run {
       this.tollGuideLane = laneAt(target);
     }
     return target + (lanePosition(this.tollGuideLane) - target) * blend * blend * (3 - 2 * blend);
+  }
+
+  get cleanSpeedBonus() {
+    return clamp((this.cleanTime - 3) * .85, 0, 14);
+  }
+
+  activateTurbo() {
+    if (this.stop || this.over || this.boost || !this.turboCharges) return false;
+    this.turboCharges--;
+    this.boost = TURBO_SECONDS;
+    this.turboKick = .48;
+    this.speed = Math.max(this.speed, TOP_SPEED + 8 + this.cleanSpeedBonus);
+    this.notify('TURBO ENGAGED', 1.5);
+    return true;
   }
 
   notify(message, duration = 2.5) {
@@ -301,11 +318,9 @@ export class Run {
     object.hit = true;
     switch (object.kind) {
       case 'boost':
-        this.boost = TURBO_SECONDS;
-        this.turboKick = .48;
-        this.speed = Math.max(this.speed, TOP_SPEED + 8);
-        this.notify('TURBO ENGAGED', 1.5);
-        this.events.push('boost');
+        this.turboCharges = Math.min(MAX_TURBO_CHARGES, this.turboCharges + 1);
+        this.notify('TURBO CHARGED', 1.2);
+        this.events.push('charge');
         break;
       case 'deadline': {
         const added = this.addTime(DEADLINE_SECONDS);
@@ -323,6 +338,7 @@ export class Run {
 
   wreck(reason) {
     this.failure = reason;
+    this.cleanTime = 0;
     this.damage = 100;
     this.speed = 0;
     this.boost = 0;
@@ -363,6 +379,7 @@ export class Run {
     object.bump = {side: -side, force, age: 0};
     this.impact = {side, force: .38 + force * .62, age: 0, fatal: false};
     this.damageSide = -side;
+    this.cleanTime = 0;
     const addedDamage = Math.round(axis === 'x' ? 8 + force * 14 : 17 + force * 25);
     this.damage = Math.min(100, this.damage + addedDamage);
     this.panelDamage[this.damageSide > 0 ? 1 : 0] += addedDamage;
@@ -503,11 +520,13 @@ export class Run {
       this.speed = 0;
     } else {
       const target = braking ? (this.boost ? 49 : 38) : this.boost ? TURBO_SPEED : accelerating ? TOP_SPEED : CRUISE_SPEED;
-      const recoveringTarget = target * (1 - this.spin * .36);
+      if (!this.spin && !this.stop) this.cleanTime += dt;
+      const speedBonus = braking ? 0 : this.cleanSpeedBonus;
+      const recoveringTarget = (target + speedBonus) * (1 - this.spin * .36);
       const response = braking ? 6.4 : this.boost ? 6 : accelerating ? 5.2 : 4.2;
       this.speed += (recoveringTarget - this.speed) * (1 - Math.exp(-dt * response));
       this.distance += this.speed * dt;
-      if (this.speed >= TOP_SPEED - 2 && !this.spin) {
+      if (this.speed >= TOP_SPEED + speedBonus - 2 && !this.spin) {
         this.flow += dt;
         this.longest = Math.max(this.longest, this.flow);
         if (this.flow > 2) this.refunded += this.addTime(Math.min(dt * .8, Math.max(0, 90 - this.refunded)));
