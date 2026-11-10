@@ -505,13 +505,14 @@ export function createRoad3D(canvas) {
   const debris = new T.InstancedMesh(cube, neon(0xffa844), 96);
   const rubber = new T.InstancedMesh(cube, material(0x20182c, .98), 64);
   const tireDust = new T.InstancedMesh(cube, material(0x695674, .98), 26);
+  const turboStreaks = new T.InstancedMesh(cube, neon(0x5ae8ff), 28);
   const dummy = new T.Object3D();
   for (const instances of [markings, posts, reflectors, arrows]) {
     instances.frustumCulled = false;
     instances.instanceMatrix.setUsage(T.DynamicDrawUsage);
     scene.add(instances);
   }
-  for (const instances of [exhaust, debris, tireDust, rubber]) {
+  for (const instances of [exhaust, debris, tireDust, rubber, turboStreaks]) {
     instances.frustumCulled = false;
     instances.instanceMatrix.setUsage(T.DynamicDrawUsage);
     scene.add(instances);
@@ -843,6 +844,15 @@ export function createRoad3D(canvas) {
         (.09 + speed * .19 + surge * .22) * fade);
     }
     exhaust.instanceMatrix.needsUpdate = true;
+    turboStreaks.count = turbo && !reducedMotion.matches ? 28 : 0;
+    for (let i = 0; i < turboStreaks.count; i++) {
+      const phase = (sceneDistance * .033 + i * .618) % 1;
+      const side = i % 2 ? -1 : 1;
+      const x = side * (HALF + .25 + (i % 5) * .92);
+      place(turboStreaks, i, x, .04 + (i % 4) * .20, -61 + phase * 69,
+        .019, .024, 1.3 + phase * (4.2 + surge * 3.2));
+    }
+    turboStreaks.instanceMatrix.needsUpdate = true;
     const body = player.userData.body;
     body.position.y = reducedMotion.matches ? 0 : speed * (.025 * Math.sin(sceneDistance * .74) + .014 * Math.sin(sceneDistance * 1.3));
     player.rotation.y = -tireLoad * .14 + side * (kick * .23 + wreck * .50);
@@ -861,12 +871,12 @@ export function createRoad3D(canvas) {
     });
     const tall = aspect < .85;
     chaseX += (player.position.x * (tall ? .91 : .57) - chaseX) * (1 - Math.exp(-7.5 * dt));
-    const targetFov = (tall ? 70 : 49) + (reducedMotion.matches ? 0 : speed * 4 + (turbo ? 7 + surge * 9 : 0));
-    cameraFov += (targetFov - cameraFov) * (1 - Math.exp(-(turbo ? 10 : 5) * dt));
+    const targetFov = (tall ? 70 : 49) + (reducedMotion.matches ? 0 : speed * 4 + (turbo ? 7 + surge * 12 : 0));
+    cameraFov += (targetFov - cameraFov) * (1 - Math.exp(-(turbo ? 17 : 7) * dt));
     camera.fov = cameraFov;
     camera.updateProjectionMatrix();
     const cameraZ = tall ? (intro ? 15 : 12.5) : intro ? 11.6 : 8.8;
-    camera.position.set(chaseX + side * kick * .26, (tall ? 5.1 : intro ? 4.35 : 3.95) + kick * .12, cameraZ + kick * .32 + (reducedMotion.matches ? 0 : surge * .48));
+    camera.position.set(chaseX + side * kick * .26, (tall ? 5.1 : intro ? 4.35 : 3.95) + kick * .12, cameraZ + kick * .32 + (reducedMotion.matches ? 0 : surge * .79));
     camera.lookAt(chaseX * (tall ? .89 : .52) + input * .24, tall ? (intro ? .45 : 1.9) : intro ? .10 : 1.44, -21);
     renderer.render(scene, camera);
   }

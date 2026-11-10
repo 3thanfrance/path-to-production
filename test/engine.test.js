@@ -1,18 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {Run,rank,TOP_SPEED,TURBO_SPEED,DEADLINE_SECONDS,obstacleLane,lanePosition} from '../engine.js';
+import {Run,rank,TOP_SPEED,TURBO_SPEED,MAX_TURBO_FUEL,DEADLINE_SECONDS,obstacleLane,lanePosition} from '../engine.js';
 test('red booth holds for eight seconds and resumes without double charging',()=>{const r=new Run();r.lane=0;r.toll();assert.equal(r.stop,8);for(let i=0;i<480;i++)r.update(1/60,true);assert.ok(r.stop<1e-10);assert.ok(Math.abs(r.time-37)<1e-8);assert.equal(r.tollLost,8);r.update(.1,true);assert.ok(r.speed>0);});
 test('purple lane refunds two seconds with zero stop and respects cap',()=>{const r=new Run();r.lane=r.purple;r.toll();assert.equal(r.time,47);assert.equal(r.stop,0);r.time=59;r.toll();assert.equal(r.time,60);});
 test('flow refunds are capped and the clock eventually ends',()=>{const r=new Run(()=>.5);r.speed=TOP_SPEED;r.time=60;r.plaza=1e9;r.objects=[];for(let i=0;i<20000&&!r.over;i++)r.update(1/60,true);assert.equal(r.over,true);assert.equal(r.time,0);assert.ok(r.refunded<=90);assert.ok(r.longest>100);});
 test('a turbo rear impact stops at the bumper and costs three seconds', () => {
   const run = new Run();
   run.speed = TURBO_SPEED;
-  run.boost = 2;
+  run.turboFuel = 2;
   run.objects = [{kind: 'hazard', lane: 2, z: 42, type: 3}];
   run.update(.55, true);
   assert.ok(run.events.includes('crash'));
   assert.ok(run.distance <= run.objects[0].z - 4.4 / .27);
-  assert.equal(run.boost, 0);
+  assert.equal(run.boost, false);
   assert.equal(run.time, 45 - .55 - 3);
 });
 
@@ -61,17 +61,16 @@ test('five lanes are usable at the start and remain available after tolls', () =
 test('opening turbo accelerates the car and the deadline pickup adds six seconds', () => {
   const run = new Run();
   run.move(-1);
-  while (!run.turboCharges && !run.over) run.update(1 / 60, false);
+  while (!run.turboFuel && !run.over) run.update(1 / 60, false);
   assert.ok(run.events.includes('charge'));
-  assert.equal(run.boost, 0);
-  assert.ok(run.activateTurbo());
-  while (run.distance < 155 && !run.over) run.update(1 / 60, false);
+  assert.equal(run.boost, false);
+  while (run.distance < 155 && !run.over) run.update(1 / 60, false, false, true);
   run.move(1);
-  while (run.distance < 199 && !run.over) run.update(1 / 60, false);
+  while (run.distance < 199 && !run.over) run.update(1 / 60, false, false, true);
   run.move(1);
   while (run.distance < 243 && !run.over) {
     const time = run.time;
-    run.update(1 / 60, false);
+    run.update(1 / 60, false, false, true);
     if (run.events.includes('deadline')) {
       assert.ok(Math.abs(run.time - (time + DEADLINE_SECONDS - 1 / 60)) < .001);
     }
@@ -255,14 +254,13 @@ test('following the moving pickup trail chains boosts and purple tolls without a
         } else if (cue && cue.z < run.plaza && cue.z - run.distance <= 21 + start % 5) {
           run.move(Math.sign(cue.lane - run.lane));
         }
-        run.update(dt, accelerate);
+        run.update(dt, accelerate, false, run.turboFuel > 0);
         assert.ok(!run.events.includes('crash'), `seed ${start}, throttle ${accelerate}, crash at ${run.distance}`);
         assert.equal(run.stop, 0, `seed ${start}, toll at ${run.distance}`);
         const missed = run.objects.find(item => ['boost', 'gem', 'deadline'].includes(item.kind) && !item.hit && item.z < run.distance - 5);
         assert.equal(missed, undefined, `seed ${start}, missed ${missed?.kind} at ${missed?.z}`);
         if (run.events.includes('charge')) {
           boosts++;
-          run.activateTurbo();
         }
       }
       assert.equal(run.plazaIndex, 9);
@@ -275,24 +273,24 @@ test('full-speed steering allows small corrections, sustained turns and shoulder
   const run = new Run();
   run.objects = [];
   run.speed = TURBO_SPEED;
-  run.boost = 3;
+  run.turboFuel = 3;
   const dt = 1 / 60;
   run.steerBy(.035);
-  for (let tick = 0; tick < 18; tick++) run.update(dt, true);
+  for (let tick = 0; tick < 18; tick++) run.update(dt, true, false, true);
   assert.ok(run.steering.position > .025 && run.steering.position < .045);
 
   for (let tick = 0; tick < 17; tick++) {
     run.steerWithKeys(1, tick * dt, dt);
-    run.update(dt, true);
+    run.update(dt, true, false, true);
   }
-  for (let tick = 0; tick < 16; tick++) run.update(dt, true);
+  for (let tick = 0; tick < 16; tick++) run.update(dt, true, false, true);
   assert.ok(run.steering.position > .28 && run.steering.position < .42);
 
   run.steerBy(-4);
-  for (let tick = 0; tick < 38; tick++) run.update(dt, true);
+  for (let tick = 0; tick < 38; tick++) run.update(dt, true, false, true);
   assert.ok(run.steering.position > -.861 && run.steering.position < -.82);
   run.steerBy(.10);
-  for (let tick = 0; tick < 20; tick++) run.update(dt, true);
+  for (let tick = 0; tick < 20; tick++) run.update(dt, true, false, true);
   assert.ok(run.steering.position > -.80);
   assert.ok(!run.wrecked);
 });
@@ -303,13 +301,13 @@ test('toll assist centers the selected lane and yields to a deliberate lane chan
     run.objects = [];
     run.distance = run.plaza - 78;
     run.speed = TURBO_SPEED;
-    run.boost = 2;
+    run.turboFuel = 2;
     run.steering.position = turn ? 0 : .51;
     run.steerBy(.005);
     const dt = 1 / 60;
     for (let tick = 0; !run.plazaIndex && tick < 70; tick++) {
       if (turn && tick < 22) run.steerWithKeys(1, tick * dt, dt);
-      run.update(dt, true);
+      run.update(dt, true, false, true);
     }
     assert.equal(run.plazaIndex, 1);
     assert.equal(run.stop, 0);
@@ -321,7 +319,7 @@ test('distinct hard hits accumulate damage until the car breaks down', () => {
   const run = new Run();
   const crash = () => {
     run.speed = TURBO_SPEED;
-    run.boost = 2;
+    run.turboFuel = 2;
     run.objects = [{kind: 'hazard', type: 3, lane: 2, z: run.distance + 19}];
     run.update(.05, true);
     assert.ok(run.events.includes('crash'));
@@ -346,13 +344,13 @@ test('braking can open a gap during turbo and releasing it restores the surge', 
   run.objects = [];
   run.speed = TOP_SPEED;
   run.collect({kind: 'boost'});
-  assert.ok(run.activateTurbo());
+  run.update(1 / 60, true, false, true);
   assert.ok(run.speed > TOP_SPEED);
   assert.ok(run.turboKick > 0);
-  for (let i = 0; i < 24; i++) run.update(1 / 60, true, true);
+  for (let i = 0; i < 24; i++) run.update(1 / 60, true, true, true);
   assert.ok(run.speed < TOP_SPEED);
   assert.ok(run.boost > 0);
-  for (let i = 0; i < 36; i++) run.update(1 / 60, true);
+  for (let i = 0; i < 36; i++) run.update(1 / 60, true, false, true);
   assert.ok(run.speed > TOP_SPEED);
   assert.equal(run.turboKick, 0);
 });
@@ -372,16 +370,20 @@ test('turbo stays banked while clean speed builds, and an impact resets clean sp
   run.plaza = 1e9;
   for (let i = 0; i < 3; i++) run.collect({kind: 'boost'});
   for (let i = 0; i < 720; i++) run.update(1 / 60, true);
-  assert.equal(run.turboCharges, 2);
-  assert.equal(run.boost, 0);
+  assert.equal(run.turboFuel, MAX_TURBO_FUEL);
+  assert.equal(run.boost, false);
   assert.ok(run.speed > TOP_SPEED + 5);
-  assert.ok(run.activateTurbo());
-  assert.ok(!run.activateTurbo());
-  assert.equal(run.turboCharges, 1);
+  run.update(.1, true, false, true);
+  assert.ok(run.boost);
+  assert.ok(run.turboFuel < MAX_TURBO_FUEL);
+  const remaining = run.turboFuel;
+  run.update(.05, true);
+  assert.equal(run.boost, false);
+  assert.equal(run.turboFuel, remaining);
   run.objects = [{kind: 'hazard', type: 3, lane: 2, z: run.distance + 17}];
   run.update(.05, true);
   assert.ok(run.events.includes('crash'));
   assert.equal(run.cleanSpeedBonus, 0);
-  assert.equal(run.boost, 0);
-  assert.equal(run.turboCharges, 1);
+  assert.equal(run.boost, false);
+  assert.equal(run.turboFuel, remaining);
 });

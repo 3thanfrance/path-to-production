@@ -3,9 +3,9 @@ export const PRODUCTION_DISTANCE = 2000;
 export const LANE_COUNT = 5;
 export const CRUISE_SPEED = 68;
 export const TOP_SPEED = 94;
-export const TURBO_SPEED = 125;
+export const TURBO_SPEED = 134;
 export const TURBO_SECONDS = 3.5;
-export const MAX_TURBO_CHARGES = 2;
+export const MAX_TURBO_FUEL = 2 * TURBO_SECONDS;
 export const DEADLINE_SECONDS = 6;
 const MAX_TIME = 60;
 const PLAZA_SPACING = 620;
@@ -137,8 +137,8 @@ export class Run {
     this.message = '';
     this.messageTime = 0;
     this.spin = 0;
-    this.boost = 0;
-    this.turboCharges = 0;
+    this.boost = false;
+    this.turboFuel = 0;
     this.cleanTime = 0;
     this.turboKick = 0;
     this.events = [];
@@ -185,16 +185,6 @@ export class Run {
     return clamp((this.cleanTime - 3) * .85, 0, 14);
   }
 
-  activateTurbo() {
-    if (this.stop || this.over || this.boost || !this.turboCharges) return false;
-    this.turboCharges--;
-    this.boost = TURBO_SECONDS;
-    this.turboKick = .48;
-    this.speed = Math.max(this.speed, TOP_SPEED + 8 + this.cleanSpeedBonus);
-    this.notify('TURBO ENGAGED', 1.5);
-    return true;
-  }
-
   notify(message, duration = 2.5) {
     this.message = message;
     this.messageTime = duration;
@@ -215,7 +205,7 @@ export class Run {
     }
     this.stop = 8;
     this.speed = 0;
-    this.boost = 0;
+    this.boost = false;
     this.tollLost += this.stop;
     this.notify('VERIFICATION IN PROGRESS');
     this.events.push('stop');
@@ -318,7 +308,7 @@ export class Run {
     object.hit = true;
     switch (object.kind) {
       case 'boost':
-        this.turboCharges = Math.min(MAX_TURBO_CHARGES, this.turboCharges + 1);
+        this.turboFuel = Math.min(MAX_TURBO_FUEL, this.turboFuel + TURBO_SECONDS);
         this.notify('TURBO CHARGED', 1.2);
         this.events.push('charge');
         break;
@@ -341,7 +331,7 @@ export class Run {
     this.cleanTime = 0;
     this.damage = 100;
     this.speed = 0;
-    this.boost = 0;
+    this.boost = false;
     this.wrecked = true;
     this.over = true;
     this.impact.fatal = true;
@@ -389,8 +379,7 @@ export class Run {
     }
     this.spin = .17 + force * .24;
     this.speed *= axis === 'x' ? .96 - force * .08 : .78 - force * .17;
-    if (axis === 'z') this.boost = 0;
-    else this.boost = Math.max(0, this.boost - .32);
+    this.boost = false;
     this.time -= axis === 'x' ? 1 : 3;
     this.flow = 0;
     this.notify(`${axis === 'x' ? 'SIDESWIPE  −1s' : 'IMPACT  −3s'} · +${addedDamage}% DAMAGE`, 1.35);
@@ -490,14 +479,23 @@ export class Run {
     }
   }
 
-  update(dt, accelerating, braking = false) {
+  update(dt, accelerating, braking = false, turboHeld = false) {
     if (this.over) return;
     this.events = [];
     if (this.impact) this.impact.age += dt;
     this.messageTime = Math.max(0, this.messageTime - dt);
     this.spin = Math.max(0, this.spin - dt);
-    this.boost = Math.max(0, this.boost - dt);
+    const wasBoosting = this.boost > 0;
+    const burn = turboHeld && !this.stop && !this.spin ? Math.min(dt, this.turboFuel) : 0;
+    this.boost = burn > 0;
+    this.turboFuel = Math.max(0, this.turboFuel - burn);
     this.turboKick = this.boost ? Math.max(0, this.turboKick - dt) : 0;
+    if (this.boost && !wasBoosting) {
+      this.turboKick = .48;
+      if (!braking) this.speed = Math.max(this.speed, TOP_SPEED + 19 + this.cleanSpeedBonus);
+      this.notify('TURBO ENGAGED', .65);
+      this.events.push('boost');
+    }
     this.time -= dt;
 
     const held = Math.min(dt, this.stop);
@@ -523,7 +521,7 @@ export class Run {
       if (!this.spin && !this.stop) this.cleanTime += dt;
       const speedBonus = braking ? 0 : this.cleanSpeedBonus;
       const recoveringTarget = (target + speedBonus) * (1 - this.spin * .36);
-      const response = braking ? 6.4 : this.boost ? 6 : accelerating ? 5.2 : 4.2;
+      const response = braking ? 6.4 : this.boost ? 17 : this.speed > recoveringTarget ? 3.2 : accelerating ? 5.2 : 4.2;
       this.speed += (recoveringTarget - this.speed) * (1 - Math.exp(-dt * response));
       this.distance += this.speed * dt;
       if (this.speed >= TOP_SPEED + speedBonus - 2 && !this.spin) {
