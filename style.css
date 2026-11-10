@@ -61,7 +61,7 @@ header > * { pointer-events: auto; }
 #intro {
   background: linear-gradient(180deg, #0c06476b 0%, transparent 23%, transparent 77%, #070922b0 100%);
 }
-.arcade-panel, .time, #pass {
+.arcade-panel, .time, #brilliance {
   min-width: 132px;
   background: linear-gradient(150deg, #080b20, #050616);
   border: 2px solid var(--cyan);
@@ -131,11 +131,8 @@ em { color: var(--amber); font-style: normal; }
 .time.low strong { color: #ff6f6f; text-shadow: 0 0 14px #fa346c; }
 .time small { display: block; max-width: 165px; margin-top: 6px; color: #bdd0eb; font: 700 8px var(--mono); letter-spacing: .05em; }
 .bottom-hud { position: absolute; inset: 0; }
-#pass { position: absolute; top: 62px; right: 22px; text-align: right; min-width: 135px; }
-#pass b { font-size: 23px; color: var(--amber); letter-spacing: 0; }
-#pass small { display: block; color: #d5b4ff; margin-top: 5px; font: 700 9px var(--mono); }
-#pass:disabled { cursor: default; }
-#pass:not(:disabled) { border-color: #ffe55d; box-shadow: 0 0 12px #ffbf27b0; }
+#brilliance { position: absolute; top: 62px; right: 22px; text-align: right; min-width: 135px; }
+#brilliance strong { display: block; font-size: 23px; color: var(--amber); letter-spacing: 0; }
 #pause { position: absolute; right: 19px; top: 149px; width: 36px; height: 33px; font-size: 16px; }
 .distance, .speed, .flow {
   position: absolute;
@@ -215,11 +212,10 @@ em { color: var(--amber); font-style: normal; }
   .intro-copy { top: 14%; width: calc(100% - 24px); }
   h1 { font-size: clamp(24px, 8vw, 49px); }
   .attract-clock, .time { top: 13px; left: 13px; }
-  .arcade-panel, .time, #pass { min-width: 99px; padding: 6px 8px; font-size: 8px; border-radius: 8px; }
+  .arcade-panel, .time, #brilliance { min-width: 99px; padding: 6px 8px; font-size: 8px; border-radius: 8px; }
   .time small { max-width: 100px; font-size: 7px; }
-  .attract-bank, #pass { top: 46px; right: 13px; }
-  .attract-bank strong, #pass b { font-size: 18px; }
-  #pass small { font-size: 7px; }
+  .attract-bank, #brilliance { top: 46px; right: 13px; }
+  .attract-bank strong, #brilliance strong { font-size: 18px; }
   #pause { top: 108px; right: 13px; }
   .launch { bottom: 20px; }
   .launch .desktop-help { display: none; }

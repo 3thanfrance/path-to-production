@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import {Run,rank,TOP_SPEED,TURBO_SPEED,DEADLINE_SECONDS,obstacleLane,lanePosition} from '../engine.js';
 test('red booth holds for eight seconds and resumes without double charging',()=>{const r=new Run();r.lane=0;r.toll();assert.equal(r.stop,8);for(let i=0;i<480;i++)r.update(1/60,true);assert.ok(r.stop<1e-10);assert.ok(Math.abs(r.time-37)<1e-8);assert.equal(r.tollLost,8);r.update(.1,true);assert.ok(r.speed>0);});
 test('purple lane refunds two seconds with zero stop and respects cap',()=>{const r=new Run();r.lane=r.purple;r.toll();assert.equal(r.time,47);assert.equal(r.stop,0);r.time=59;r.toll();assert.equal(r.time,60);});
-test('purchase requires 15 brilliance, cannot stack, consumes on red only',()=>{const r=new Run();assert.equal(r.buy(),false);r.brilliance=30;assert.equal(r.buy(),true);assert.equal(r.brilliance,15);assert.equal(r.buy(),false);r.lane=r.purple;r.toll();assert.equal(r.pass,true);r.lane=0;r.toll();assert.equal(r.pass,false);assert.equal(r.stop,2);assert.equal(r.tollLost,2);});
 test('flow refunds are capped and the clock eventually ends',()=>{const r=new Run(()=>.5);r.speed=TOP_SPEED;r.time=60;r.plaza=1e9;r.objects=[];for(let i=0;i<20000&&!r.over;i++)r.update(1/60,true);assert.equal(r.over,true);assert.equal(r.time,0);assert.ok(r.refunded<=90);assert.ok(r.longest>100);});
 test('a turbo rear impact stops at the bumper and costs three seconds', () => {
   const run = new Run();
@@ -61,10 +60,14 @@ test('five lanes are usable at the start and remain available after tolls', () =
 
 test('opening turbo accelerates the car and the deadline pickup adds six seconds', () => {
   const run = new Run();
+  run.move(-1);
   while (!run.boost && !run.over) run.update(1 / 60, false);
   assert.ok(run.events.includes('boost'));
+  while (run.distance < 155 && !run.over) run.update(1 / 60, false);
   run.move(1);
-  while (run.distance < 226 && !run.over) {
+  while (run.distance < 199 && !run.over) run.update(1 / 60, false);
+  run.move(1);
+  while (run.distance < 243 && !run.over) {
     const time = run.time;
     run.update(1 / 60, false);
     if (run.events.includes('deadline')) {
@@ -92,6 +95,7 @@ test('procedural obstacle rows leave two lanes open and keep a continuous pickup
 
 test('a closed toll stops at a fixed line, then remains behind the car as it leaves', () => {
   const run = new Run();
+  run.objects = [];
   const gate = run.plaza;
   while (!run.stop && !run.over) run.update(1 / 60, true);
   assert.equal(run.distance, gate - 12);
@@ -345,4 +349,13 @@ test('braking can open a gap during turbo and releasing it restores the surge', 
   for (let i = 0; i < 36; i++) run.update(1 / 60, true);
   assert.ok(run.speed > TOP_SPEED);
   assert.equal(run.turboKick, 0);
+});
+
+test('launch gives the driver an immediate opening decision', () => {
+  const run = new Run();
+  assert.ok(run.speed > 0);
+  const dt = 1 / 60;
+  for (let tick = 0; tick < 150 && !run.over; tick++) run.update(dt, false);
+  assert.equal(run.failure, 'barrier');
+  assert.ok(run.distance < 126);
 });

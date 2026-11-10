@@ -1,9 +1,9 @@
 export const BRAND = Object.freeze({ carOrange: '#FFB310', chainguardPurple: '#ad65ff' });
 export const PRODUCTION_DISTANCE = 2000;
 export const LANE_COUNT = 5;
-export const CRUISE_SPEED = 59;
-export const TOP_SPEED = 84;
-export const TURBO_SPEED = 116;
+export const CRUISE_SPEED = 68;
+export const TOP_SPEED = 94;
+export const TURBO_SPEED = 125;
 export const TURBO_SECONDS = 3.5;
 export const DEADLINE_SECONDS = 6;
 const MAX_TIME = 60;
@@ -53,7 +53,7 @@ function sweep(a, b, shapeA, shapeB) {
   return {fraction: Math.max(0, enter), ...(enter < 0 ? overlapNormal : normal)};
 }
 const CONVOY_GAP = 47;
-const GUIDE_LEAD = 15;
+const GUIDE_LEAD = 23;
 export const MERGE_SIGNAL = .55;
 export const MERGE_DURATION = .85;
 const FOLLOW_GAP = 22;
@@ -84,14 +84,16 @@ export function stepSteering(position, velocity, target, dt, response = 17) {
 
 function openingTraffic() {
   return [
-    { kind: 'hazard', type: 0, lane: 0, z: 85 },
-    { kind: 'hazard', type: 4, lane: 4, z: 96 },
-    {kind: 'guide', lane: 2, z: 70},
-    { kind: 'boost', lane: 2, z: 115 },
-    { kind: 'hazard', type: 2, lane: 1, z: 172 },
-    { kind: 'hazard', type: 3, lane: 4, z: 178 },
-    { kind: 'deadline', lane: 3, z: 230 },
-    { kind: 'gem', lane: 3, z: 263 },
+    {kind: 'guide', lane: 1, z: 48},
+    {kind: 'hazard', type: 0, lane: 0, z: 75},
+    {kind: 'hazard', type: 4, lane: 4, z: 82},
+    {kind: 'boost', lane: 1, z: 108},
+    {kind: 'work', lane: 2, z: 126},
+    {kind: 'guide', lane: 2, z: 181},
+    {kind: 'hazard', type: 2, lane: 1, z: 167},
+    {kind: 'hazard', type: 3, lane: 4, z: 178},
+    {kind: 'deadline', lane: 3, z: 247},
+    {kind: 'gem', lane: 3, z: 284},
     {kind: 'guide', lane: 3, z: 390},
     {kind: 'work', lane: 4, z: 305},
     {kind: 'hazard', type: 5, lane: 1, z: 304},
@@ -106,7 +108,7 @@ export class Run {
     this.random = random;
     this.time = 45;
     this.distance = 0;
-    this.speed = 0;
+    this.speed = 24;
     this.lane = 2;
     this.steering = { position: 0, velocity: 0 };
     this.brilliance = 0;
@@ -119,9 +121,7 @@ export class Run {
     this.damageSide = 1;
     this.panelDamage = [0, 0];
     this.failure = null;
-    this.pass = false;
     this.stop = 0;
-    this.stopTotal = 0;
     this.tollLost = 0;
     this.flow = 0;
     this.longest = 0;
@@ -178,13 +178,6 @@ export class Run {
     return target + (lanePosition(this.tollGuideLane) - target) * blend * blend * (3 - 2 * blend);
   }
 
-  buy() {
-    if (this.brilliance < 15 || this.pass || this.over) return false;
-    this.brilliance -= 15;
-    this.pass = true;
-    return true;
-  }
-
   notify(message, duration = 2.5) {
     this.message = message;
     this.messageTime = duration;
@@ -199,17 +192,15 @@ export class Run {
   toll(contactLane = this.lane) {
     if (contactLane === this.purple) {
       const added = this.addTime(2);
-      this.notify(added ? `TOLL PRE-PAID  +${Math.ceil(added)}s` : 'TOLL PRE-PAID · CLOCK FULL');
+      this.notify(added ? `EXPRESS TOLL  +${Math.ceil(added)}s` : 'EXPRESS TOLL · CLOCK FULL');
       this.events.push('toll');
       return;
     }
-    this.stop = this.pass ? 2 : 8;
-    this.stopTotal = this.stop;
-    this.pass = false;
+    this.stop = 8;
     this.speed = 0;
     this.boost = 0;
     this.tollLost += this.stop;
-    this.notify(this.stop === 2 ? 'PASS ACCEPTED · SLOW ROLL' : 'VERIFICATION IN PROGRESS');
+    this.notify('VERIFICATION IN PROGRESS');
     this.events.push('stop');
   }
 
@@ -513,7 +504,7 @@ export class Run {
     } else {
       const target = braking ? (this.boost ? 49 : 38) : this.boost ? TURBO_SPEED : accelerating ? TOP_SPEED : CRUISE_SPEED;
       const recoveringTarget = target * (1 - this.spin * .36);
-      const response = braking ? 6.4 : this.boost ? 6 : accelerating ? 4.5 : 3.5;
+      const response = braking ? 6.4 : this.boost ? 6 : accelerating ? 5.2 : 4.2;
       this.speed += (recoveringTarget - this.speed) * (1 - Math.exp(-dt * response));
       this.distance += this.speed * dt;
       if (this.speed >= TOP_SPEED - 2 && !this.spin) {
