@@ -1,6 +1,6 @@
 import * as T from 'three';
 import { CHAINGUARD_OCTOPUS } from './chainguard.js';
-import { BRAND, lanePosition, obstacleLane, ROAD_HALF, ROAD_DEPTH, TURBO_SPEED, MERGE_SIGNAL, MERGE_DURATION } from './engine.js';
+import { BRAND, lanePosition, obstacleLane, ROAD_HALF, ROAD_DEPTH, TOLL_PILLAR_WIDTH, TURBO_SPEED, MERGE_SIGNAL, MERGE_DURATION } from './engine.js';
 
 const LANE = 3.55;
 const HALF = ROAD_HALF;
@@ -451,7 +451,7 @@ export function createRoad3D(canvas) {
     for (let i = 0; i <= 5; i++) {
       const x = i * LANE - HALF;
       box(group, boothTrim, x, .15, 0, .70, .30, 2.35);
-      box(group, boothMetal, x, 1.62, 0, .52, 3.04, 1.35);
+      box(group, boothMetal, x, 1.62, 0, TOLL_PILLAR_WIDTH, 3.04, 1.35);
       box(group, boothTrim, x, 2.78, .08, .60, .25, 1.44);
       box(group, amber, x, 1.26, .691, .115, .88, .035);
       halo(group, 0xffa04a, x, 1.26, .73, .48, 1.42);

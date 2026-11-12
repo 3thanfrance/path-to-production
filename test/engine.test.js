@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Run,rank,TOP_SPEED,TURBO_SPEED,MAX_TURBO_FUEL,DEADLINE_SECONDS,obstacleLane,lanePosition} from '../engine.js';
 test('red booth holds for eight seconds and resumes without double charging',()=>{const r=new Run();r.lane=0;r.toll();assert.equal(r.stop,8);for(let i=0;i<480;i++)r.update(1/60,true);assert.ok(r.stop<1e-10);assert.ok(Math.abs(r.time-37)<1e-8);assert.equal(r.tollLost,8);r.update(.1,true);assert.ok(r.speed>0);});
-test('purple lane refunds two seconds with zero stop and respects cap',()=>{const r=new Run();r.lane=r.purple;r.toll();assert.equal(r.time,47);assert.equal(r.stop,0);r.time=59;r.toll();assert.equal(r.time,60);});
+test('purple lane adds the full two seconds even above one minute',()=>{const r=new Run();r.lane=r.purple;r.toll();assert.equal(r.time,47);assert.equal(r.stop,0);r.time=59;r.toll();assert.equal(r.time,61);r.collect({kind:'deadline'});assert.equal(r.time,67);});
 test('flow refunds are capped and the clock eventually ends',()=>{const r=new Run(()=>.5);r.speed=TOP_SPEED;r.time=60;r.plaza=1e9;r.objects=[];for(let i=0;i<20000&&!r.over;i++)r.update(1/60,true);assert.equal(r.over,true);assert.equal(r.time,0);assert.ok(r.refunded<=90);assert.ok(r.longest>100);});
 test('a turbo rear impact stops at the bumper and costs three seconds', () => {
   const run = new Run();
@@ -477,5 +477,24 @@ test('the purple merge arrow leaves room to steer at maximum turbo speed', () =>
     assert.equal(run.plazaIndex, 1);
     assert.equal(run.stop, 0);
     assert.equal(run.damage, 0);
+  }
+});
+
+test('toll pillars wreck cars that straddle the divider and allow small overlaps', () => {
+  for (const [offset, wrecked] of [[-.20, true], [-.16, true], [-.125, false],
+    [.125, false], [.16, true], [.20, true]]) {
+    const run = new Run();
+    run.objects = [];
+    run.distance = run.plaza - 22;
+    const position = lanePosition(run.purple) + offset;
+    run.steering.position = position;
+    run.steerBy(0);
+    for (let tick = 0; tick < 60 && !run.plazaIndex && !run.over; tick++) run.update(1 / 60, true);
+    assert.equal(run.wrecked, wrecked, `offset ${offset}`);
+    assert.equal(run.failure, wrecked ? 'pillar' : null);
+    assert.equal(run.damage, wrecked ? 100 : 0);
+    assert.equal(run.stop, 0);
+    assert.equal(run.steering.position, position);
+    assert.equal(run.plazaIndex, wrecked ? 0 : 1);
   }
 });

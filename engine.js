@@ -8,7 +8,6 @@ export const TURBO_SECONDS = 3.5;
 export const MAX_TURBO_FUEL = 2 * TURBO_SECONDS;
 const TURBO_COAST_SECONDS = .65;
 export const DEADLINE_SECONDS = 6;
-const MAX_TIME = 60;
 const PLAZA_SPACING = 620;
 const FIRST_PLAZA = 510;
 const PLAZA_APPROACH = 230;
@@ -46,6 +45,8 @@ export const ROAD_HALF = 3.55 * 2.5;
 export const ROAD_DEPTH = .27;
 export const ROAD_EDGE = .86;
 const PLAYER_SHAPE = {x: 1.20 / ROAD_HALF, z: 2.2 / ROAD_DEPTH};
+export const TOLL_PILLAR_WIDTH = .52;
+const TOLL_CLEARANCE = .60;
 const WORK_SHAPE = {x: 1.48 / ROAD_HALF, z: .47 / ROAD_DEPTH};
 const VEHICLE_SHAPES = [
   {x: 1.31, z: 2.85}, {x: 1.31, z: 2.85}, {x: 1.31, z: 1.85},
@@ -102,6 +103,16 @@ export function obstacleLane(object) {
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const laneAt = position => clamp(Math.round(((position + 1) * LANE_COUNT - 1) / 2), 0, LANE_COUNT - 1);
+
+function tollOpeningLane(position) {
+  const lane = laneAt(position);
+  const center = lanePosition(lane);
+  const halfOpening = 1 / LANE_COUNT - TOLL_PILLAR_WIDTH / (2 * ROAD_HALF);
+  const overlap = Math.max(0,
+    Math.min(position + PLAYER_SHAPE.x, center + halfOpening) -
+    Math.max(position - PLAYER_SHAPE.x, center - halfOpening));
+  return overlap >= 2 * PLAYER_SHAPE.x * TOLL_CLEARANCE ? lane : null;
+}
 
 export function stepSteering(position, velocity, target, dt, response = 17) {
   const error = position - target;
@@ -206,16 +217,10 @@ export class Run {
     this.messageTime = duration;
   }
 
-  addTime(seconds) {
-    const added = Math.min(seconds, MAX_TIME - this.time);
-    this.time += added;
-    return Math.max(0, added);
-  }
-
   toll(contactLane = this.lane) {
     if (contactLane === this.purple) {
-      const added = this.addTime(2);
-      this.notify(added ? `EXPRESS TOLL  +${Math.ceil(added)}s` : 'EXPRESS TOLL · CLOCK FULL');
+      this.time += 2;
+      this.notify('EXPRESS TOLL  +2s');
       this.events.push('toll');
       return;
     }
@@ -354,8 +359,8 @@ export class Run {
         break;
       }
       case 'deadline': {
-        const added = this.addTime(DEADLINE_SECONDS);
-        this.notify(added ? `DEADLINE EXTENDED  +${Math.ceil(added)}s` : 'DEADLINE PICKUP · CLOCK FULL');
+        this.time += DEADLINE_SECONDS;
+        this.notify(`DEADLINE EXTENDED  +${DEADLINE_SECONDS}s`);
         this.events.push('deadline');
         break;
       }
@@ -380,6 +385,13 @@ export class Run {
     this.events.push('crash', 'end');
   }
 
+  crashIntoFixedObject(reason, side) {
+    this.impact = {side, force: 1, age: 0, fatal: true};
+    this.damageSide = -side;
+    this.panelDamage[this.damageSide > 0 ? 1 : 0] = 100;
+    this.wreck(reason);
+  }
+
   resolveRoadContact(object, contact, motion, dt) {
     const {axis, sign, fraction} = contact;
     const shape = object.kind === 'work' ? WORK_SHAPE : VEHICLE_SHAPES[object.type];
@@ -391,10 +403,7 @@ export class Run {
     if (object.kind === 'work') {
       this.distance = motion.player.from.z + (this.distance - motion.player.from.z) * fraction;
       this.steering.position = motion.player.from.x + (this.steering.position - motion.player.from.x) * fraction;
-      this.impact = {side, force: 1, age: 0, fatal: true};
-      this.damageSide = -side;
-      this.panelDamage[this.damageSide > 0 ? 1 : 0] = 100;
-      this.wreck('barrier');
+      this.crashIntoFixedObject('barrier', side);
       return;
     }
 
@@ -565,6 +574,7 @@ export class Run {
     }
     let gateLane = null;
     let gateLine;
+    let gatePosition;
     if (held) {
       this.flow = 0;
       this.speed = 0;
@@ -580,7 +590,11 @@ export class Run {
       if (this.speed >= TOP_SPEED + speedBonus - 2 && !this.spin) {
         this.flow += dt;
         this.longest = Math.max(this.longest, this.flow);
-        if (this.flow > 2) this.refunded += this.addTime(Math.min(dt * .8, Math.max(0, 90 - this.refunded)));
+        if (this.flow > 2) {
+          const refund = Math.min(dt * .8, Math.max(0, 90 - this.refunded));
+          this.time += refund;
+          this.refunded += refund;
+        }
       } else {
         this.flow = 0;
       }
@@ -591,19 +605,20 @@ export class Run {
       const redLine = this.plaza - 12;
       if (this.distance >= redLine) {
         const travel = this.distance - before;
-        const laneAtLine = line => {
+        const positionAtLine = line => {
           const fraction = travel ? clamp((line - before) / travel, 0, 1) : 0;
-          return laneAt(start.x + (this.steering.position - start.x) * fraction);
+          return start.x + (this.steering.position - start.x) * fraction;
         };
-        const redLane = laneAtLine(redLine);
-        if (redLane !== this.purple) {
+        const redLane = tollOpeningLane(positionAtLine(redLine));
+        if (redLane !== null && redLane !== this.purple) {
           gateLane = redLane;
           gateLine = Math.max(redLine, before);
         } else if (this.distance >= this.plaza) {
-          gateLane = laneAtLine(this.plaza);
+          gatePosition = positionAtLine(this.plaza);
+          gateLane = tollOpeningLane(gatePosition);
           gateLine = this.plaza;
         }
-        if (gateLane !== null) this.distance = gateLine;
+        if (gateLine !== undefined) this.distance = gateLine;
       }
       if (this.passedPlaza && this.distance > this.passedPlaza.z + 65) this.passedPlaza = null;
       if (before < PRODUCTION_DISTANCE && this.distance >= PRODUCTION_DISTANCE) {
@@ -643,7 +658,15 @@ export class Run {
     if (first) this.resolveRoadContact(first.item, first.hit, {player, object: first.object}, dt);
     this.contacts = new Set(first ? [first.item] : []);
     if (this.wrecked) return;
-    if (gateLane !== null && this.distance >= gateLine) this.passPlaza(gateLane);
+    if (gateLine !== undefined && this.distance >= gateLine) {
+      if (gateLane === null) {
+        this.steering.position = gatePosition;
+        const side = Math.sign(lanePosition(laneAt(gatePosition)) - gatePosition) || 1;
+        this.crashIntoFixedObject('pillar', side);
+        return;
+      }
+      this.passPlaza(gateLane);
+    }
 
     for (const object of this.objects) {
       if (held || this.stop || object.hit || object.kind === 'hazard' || object.kind === 'work' || object.kind === 'guide' ||
