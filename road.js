@@ -662,7 +662,14 @@ export function createRoad(ctx) {
 
     const size = Math.min(width / 660, height / 530) * scale;
     const floatY = y - (19 + Math.sin(now * .005 + z / 10) * 3) * size;
-    if (object.kind === 'guide') {
+    if (object.mergeDirection) {
+      const tip = x + object.mergeDirection * 11 * size;
+      const tipY = y - 6 * size;
+      const thickness = Math.max(.8, size * 2.8);
+      line(x - object.mergeDirection * 9 * size, y + 5 * size, tip, tipY, BRAND.chainguardPurple, thickness);
+      line(tip - object.mergeDirection * 8 * size, tipY, tip, tipY, BRAND.chainguardPurple, thickness);
+      line(tip, tipY, tip - object.mergeDirection * 3 * size, tipY + 5 * size, BRAND.chainguardPurple, thickness);
+    } else if (object.kind === 'guide') {
       for (let i = 0; i < 3; i++) {
         const py = y + i * size * 4;
         line(x - 9 * size, py, x, py - 4 * size, '#74efff', Math.max(.8, size * 2));

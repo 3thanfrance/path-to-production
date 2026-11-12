@@ -378,6 +378,17 @@ export function createRoad3D(canvas) {
     return root;
   }
 
+  function mergeGuide(direction) {
+    const root = new T.Group();
+    const glow = neon(BRAND.chainguardPurple);
+    box(root, glow, -.18, .027, .12, .64, .025, .082);
+    for (const side of [-1, 1]) {
+      box(root, glow, .26, .027, .12 + side * .19, .54, .025, .085).rotation.y = side * .72;
+    }
+    root.rotation.y = direction === 1 ? .57 : Math.PI - .57;
+    return root;
+  }
+
   const tokenMaterials = {gem: neon(0xd676ff), boost: blue, deadline: neon(0x97ffb2), repair: neon(0xffd17c)};
   const tokenShapes = {
     gem: new T.OctahedronGeometry(.39),
@@ -741,8 +752,10 @@ export function createRoad3D(canvas) {
       if (relative > LOOKAHEAD || relative < -42 || (item.hit && item.kind !== 'hazard')) continue;
       visible.add(item);
       if (!traffic.has(item)) {
-        const key = item.kind === 'hazard' ? 'hazard:' + item.type : item.kind;
+        const key = item.mergeDirection ? 'merge:' + item.mergeDirection :
+          item.kind === 'hazard' ? 'hazard:' + item.type : item.kind;
         const model = pool.get(key)?.pop() ?? (
+          item.mergeDirection ? mergeGuide(item.mergeDirection) :
           item.kind === 'work' ? roadwork() : item.kind === 'guide' ? guide() :
           item.kind !== 'hazard' ? pickup(item.kind) : item.type < 3 ? truck(item.type) : compact(item.type)
         );

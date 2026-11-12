@@ -262,7 +262,9 @@ test('braking for the roadworks and merging late clears nine purple tolls', () =
           bypassSides.add(Math.sign(bypass.lane - run.purple));
         }
         const toGate = run.plaza - run.distance;
-        const mergeAt = barrier ? barrier.z + 18 : run.plaza - 30;
+        const marker = barrier && run.objects.find(item => item.mergeDirection && item.z > barrier.z &&
+          item.z < barrier.z + 25);
+        const mergeAt = marker?.z ?? run.plaza - 30;
         if (run.distance >= mergeAt && toGate <= 110) {
           run.move(Math.sign(run.purple - run.lane));
         } else if (bypass && run.distance >= bypass.z - 7) {
@@ -439,4 +441,41 @@ test('a rare wrench repairs damage and rolls back the visible wear', () => {
   assert.equal(run.damage, 30);
   assert.deepEqual(run.panelDamage, [15, 15]);
   assert.ok(run.events.includes('repair'));
+});
+
+test('new runs shuffle roadworks without repeating a layout across a shuffle boundary', () => {
+  const orders = new Set();
+  for (const start of [19, 71, 360, 953]) {
+    let seed = start;
+    const run = new Run(() => ((seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 2 ** 32));
+    const order = Array.from({length: 10}, () => run.nextTollLayout().distance);
+    assert.equal(new Set(order.slice(3, 8)).size, 5);
+    assert.ok(order.slice(1).every((distance, index) => distance !== order[index]));
+    orders.add(order.join(','));
+  }
+  assert.ok(orders.size > 1);
+});
+
+test('the purple merge arrow leaves room to steer at maximum turbo speed', () => {
+  const dt = 1 / 60;
+  for (const random of [.01, .25, .48, .65, .95]) {
+    const run = new Run(() => random);
+    const marker = run.objects.find(item => item.mergeDirection && item.z < run.plaza);
+    run.objects = run.objects.filter(item => item.kind === 'work');
+    run.distance = marker.z;
+    run.lane = marker.lane;
+    run.steering.position = lanePosition(marker.lane);
+    run.cleanTime = 30;
+    run.speed = TURBO_SPEED + run.cleanSpeedBonus;
+    run.turboFuel = 2;
+    run.boost = true;
+    run.steerBy(marker.mergeDirection * .035);
+    for (let tick = 0; tick < 55 && !run.plazaIndex && !run.over; tick++) {
+      run.steerWithKeys(marker.mergeDirection, tick * dt, dt);
+      run.update(dt, true, false, true);
+    }
+    assert.equal(run.plazaIndex, 1);
+    assert.equal(run.stop, 0);
+    assert.equal(run.damage, 0);
+  }
 });

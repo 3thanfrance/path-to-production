@@ -14,14 +14,13 @@ const FIRST_PLAZA = 510;
 const PLAZA_APPROACH = 230;
 const TOLL_LAYOUTS = [
   {side: -1, distance: 98, offsets: [15, 10]},
-  {side: 1, distance: 80, offsets: [8, 23]},
+  {side: 1, distance: 103, offsets: [8, 23]},
   {side: -1, distance: 116, offsets: [26, 14]},
-  {side: 1, distance: 91, offsets: [8, 21]},
+  {side: 1, distance: 121, offsets: [8, 21]},
   {side: 1, distance: 111, offsets: [10, 24]},
 ];
 
-function tollRoadwork(gate, lane, stretch, tier, entryLane, turnsAvailable) {
-  const layout = TOLL_LAYOUTS[stretch % TOLL_LAYOUTS.length];
+function tollRoadwork(gate, lane, layout, stretch, tier, entryLane, turnsAvailable) {
   const bypass = [lane + layout.side, lane - layout.side].find(candidate =>
     candidate >= 0 && candidate < LANE_COUNT && Math.abs(candidate - entryLane) <= turnsAvailable);
   const barrier = gate - layout.distance;
@@ -29,7 +28,7 @@ function tollRoadwork(gate, lane, stretch, tier, entryLane, turnsAvailable) {
   const objects = [
     {kind: 'work', lane, z: barrier},
     {kind: 'guide', lane: bypass, z: entryGuide},
-    {kind: 'guide', lane, z: barrier + 34},
+    {kind: 'guide', lane: bypass, z: barrier + 13, mergeDirection: Math.sign(lane - bypass)},
   ];
   const outside = Array.from({length: LANE_COUNT}, (_, index) => index)
     .filter(index => index !== bypass && index !== lane);
@@ -114,7 +113,7 @@ export function stepSteering(position, velocity, target, dt, response = 17) {
   };
 }
 
-function openingTraffic() {
+function openingTraffic(layout) {
   return [
     {kind: 'guide', lane: 1, z: 48},
     {kind: 'hazard', type: 0, lane: 0, z: 75},
@@ -126,7 +125,7 @@ function openingTraffic() {
     {kind: 'hazard', type: 3, lane: 4, z: 178},
     {kind: 'deadline', lane: 3, z: 247},
     {kind: 'gem', lane: 3, z: 284},
-    ...tollRoadwork(FIRST_PLAZA, 3, 0, 0, 2, 3).objects,
+    ...tollRoadwork(FIRST_PLAZA, 3, layout, 0, 0, 2, 3).objects,
     {kind: 'work', lane: 4, z: 305},
     {kind: 'hazard', type: 5, lane: 1, z: 304},
   ];
@@ -162,7 +161,9 @@ export class Run {
     this.passedPlaza = null;
     this.plazaIndex = 0;
     this.purple = 3;
-    this.objects = openingTraffic();
+    this.tollLayouts = [];
+    this.lastTollLayout = null;
+    this.objects = openingTraffic(this.nextTollLayout());
     this.warned = false;
     this.message = '';
     this.messageTime = 0;
@@ -234,12 +235,21 @@ export class Run {
     return choices[Math.floor(this.random() * choices.length)];
   }
 
+  nextTollLayout() {
+    if (!this.tollLayouts.length) this.tollLayouts = [...TOLL_LAYOUTS];
+    const choices = this.tollLayouts.filter(layout => layout !== this.lastTollLayout);
+    const layout = choices[Math.floor(this.random() * choices.length)];
+    this.tollLayouts.splice(this.tollLayouts.indexOf(layout), 1);
+    this.lastTollLayout = layout;
+    return layout;
+  }
+
   queueTraffic(previousGate, stretch, entryLane, exitLane = entryLane) {
     // Plan from the gate we just left to the next one, then put traffic around that line.
     let route = entryLane;
     const tier = Math.min(4, Math.floor((stretch - 1) / 2));
     const rowCount = 5 + Math.min(3, tier);
-    const roadwork = tollRoadwork(previousGate + PLAZA_SPACING, exitLane, stretch, tier, entryLane, rowCount - 2);
+    const roadwork = tollRoadwork(previousGate + PLAZA_SPACING, exitLane, this.nextTollLayout(), stretch, tier, entryLane, rowCount - 2);
     const approachLane = roadwork.bypass;
     const spacing = 414 / (rowCount - 1);
     let direction = 0;
