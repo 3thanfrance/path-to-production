@@ -51,6 +51,7 @@ test('five lanes are usable at the start and remain available after tolls', () =
   for (let i = 0; i < 6; i++) run.move(1);
   assert.equal(run.lane, 4);
   run.move(-1);
+  run.objects = [];
   while (!run.plazaIndex && !run.over) run.update(1 / 60, true);
   assert.equal(run.plazaIndex, 1);
   assert.equal(run.stop, 0);
@@ -76,22 +77,24 @@ test('opening turbo accelerates the car and the deadline pickup adds six seconds
     }
   }
   assert.ok(run.events.includes('deadline'));
-  assert.ok(run.speed > TOP_SPEED && run.speed <= TURBO_SPEED);
+  assert.ok(run.speed > TOP_SPEED && run.speed <= TURBO_SPEED + run.cleanSpeedBonus);
 });
 
-test('procedural obstacle rows leave two lanes open and keep a continuous pickup route', () => {
+test('traffic leaves a continuous route to the toll bypass', () => {
   const run = new Run(() => .63);
-  const previous = run.plaza;
-  const rows = run.objects.filter(item => item.z > previous);
+  const rows = run.objects.filter(item => item.convoy && item.kind === 'hazard');
+  const groups = [...new Set(rows.map(item => item.convoy))];
   let lane = run.purple;
-  for (const pickup of rows.filter(item => item.kind !== 'hazard' && rows.some(h => h.kind === 'hazard' && h.z === item.z))) {
-    const blockers = rows.filter(item => item.kind === 'hazard' && item.z === pickup.z);
-    assert.ok(blockers.length <= 3);
-    assert.ok(!blockers.some(item => item.lane === pickup.lane));
-    assert.ok(Math.abs(pickup.lane - lane) <= 1);
-    lane = pickup.lane;
+  for (const group of groups) {
+    const blockers = rows.filter(item => item.convoy === group);
+    const route = blockers[0].protectedLane;
+    assert.ok(blockers.length <= 2);
+    assert.ok(blockers.every(item => item.lane !== route));
+    assert.ok(Math.abs(route - lane) <= 1);
+    lane = route;
   }
-  assert.ok(rows.filter(item => item.kind === 'hazard').length <= 8);
+  assert.ok(run.objects.some(item => item.kind === 'work' && item.lane === run.nextPurple &&
+    item.z === run.plaza + 620 - 98));
 });
 
 test('a closed toll stops at a fixed line, then remains behind the car as it leaves', () => {
@@ -238,7 +241,7 @@ test('moving gaps change lanes and convoys maintain room to steer at turbo speed
   }
 });
 
-test('following the moving pickup trail chains boosts and purple tolls without a crash', () => {
+test('braking for the roadworks and merging late clears nine purple tolls', () => {
   for (const accelerate of [false, true]) {
     for (let start = 1; start <= 32; start++) {
       let seed = start;
@@ -249,12 +252,17 @@ test('following the moving pickup trail chains boosts and purple tolls without a
         // Follow the next visible marker, with one ordinary lane input per turn.
         const cue = run.objects.filter(item => item.kind !== 'hazard' && item.kind !== 'work' && !item.hit &&
           item.z >= run.distance - 4).sort((a, b) => a.z - b.z)[0];
-        if (run.plaza - run.distance <= 36) {
+        const toGate = run.plaza - run.distance;
+        if (toGate <= 80) {
           run.move(Math.sign(run.purple - run.lane));
+        } else if (toGate <= 135) {
+          const bypass = run.purple === 0 ? 1 : run.purple - 1;
+          run.move(Math.sign(bypass - run.lane));
         } else if (cue && cue.z < run.plaza && cue.z - run.distance <= 21 + start % 5) {
           run.move(Math.sign(cue.lane - run.lane));
         }
-        run.update(dt, accelerate, false, run.turboFuel > 0);
+        const approachingWorks = run.plaza - run.distance < 150;
+        run.update(dt, accelerate, run.speed > (approachingWorks ? 62 : 147), !approachingWorks && run.speed < 147 && run.turboFuel > 0);
         assert.ok(!run.events.includes('crash'), `seed ${start}, throttle ${accelerate}, crash at ${run.distance}`);
         assert.equal(run.stop, 0, `seed ${start}, toll at ${run.distance}`);
         const missed = run.objects.find(item => ['boost', 'gem', 'deadline', 'repair'].includes(item.kind) && !item.hit && item.z < run.distance - 5);
@@ -265,6 +273,7 @@ test('following the moving pickup trail chains boosts and purple tolls without a
       }
       assert.equal(run.plazaIndex, 9);
       assert.equal(boosts, 9);
+      assert.ok(run.cleanSpeedBonus >= 55);
     }
   }
 });
