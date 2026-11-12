@@ -94,7 +94,7 @@ test('traffic leaves a continuous route to the toll bypass', () => {
     lane = route;
   }
   assert.ok(run.objects.some(item => item.kind === 'work' && item.lane === run.nextPurple &&
-    item.z === run.plaza + 620 - 98));
+    item.z > run.plaza + 480 && item.z < run.plaza + 560));
 });
 
 test('a closed toll stops at a fixed line, then remains behind the car as it leaves', () => {
@@ -247,21 +247,30 @@ test('braking for the roadworks and merging late clears nine purple tolls', () =
       let seed = start;
       const run = new Run(() => ((seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 2 ** 32));
       let boosts = 0;
+      const mergeDistances = new Set();
+      const bypassSides = new Set();
       const dt = 1 / (start % 2 ? 30 : 60);
       for (let tick = 0; run.plazaIndex < 9 && tick < 120 / dt && !run.over; tick++) {
         // Follow the next visible marker, with one ordinary lane input per turn.
         const cue = run.objects.filter(item => item.kind !== 'hazard' && item.kind !== 'work' && !item.hit &&
           item.z >= run.distance - 4).sort((a, b) => a.z - b.z)[0];
+        const barrier = run.objects.find(item => item.kind === 'work' && item.lane === run.purple &&
+          item.z > run.plaza - 145 && item.z < run.plaza - 65);
+        const bypass = barrier && run.objects.find(item => item.kind === 'guide' && !item.convoy && item.z === barrier.z - 47);
+        if (bypass) {
+          mergeDistances.add(run.plaza - barrier.z);
+          bypassSides.add(Math.sign(bypass.lane - run.purple));
+        }
         const toGate = run.plaza - run.distance;
-        if (toGate <= 80) {
+        const mergeAt = barrier ? barrier.z + 18 : run.plaza - 30;
+        if (run.distance >= mergeAt && toGate <= 110) {
           run.move(Math.sign(run.purple - run.lane));
-        } else if (toGate <= 135) {
-          const bypass = run.purple === 0 ? 1 : run.purple - 1;
-          run.move(Math.sign(bypass - run.lane));
-        } else if (cue && cue.z < run.plaza && cue.z - run.distance <= 21 + start % 5) {
+        } else if (bypass && run.distance >= bypass.z - 7) {
+          run.move(Math.sign(bypass.lane - run.lane));
+        } else if ((!barrier || run.distance < barrier.z - 35) && cue && cue.z < run.plaza && cue.z - run.distance <= 21 + start % 5) {
           run.move(Math.sign(cue.lane - run.lane));
         }
-        const approachingWorks = run.plaza - run.distance < 150;
+        const approachingWorks = toGate < (barrier ? run.plaza - barrier.z + 65 : 150);
         run.update(dt, accelerate, run.speed > (approachingWorks ? 62 : 147), !approachingWorks && run.speed < 147 && run.turboFuel > 0);
         assert.ok(!run.events.includes('crash'), `seed ${start}, throttle ${accelerate}, crash at ${run.distance}`);
         assert.equal(run.stop, 0, `seed ${start}, toll at ${run.distance}`);
@@ -273,6 +282,8 @@ test('braking for the roadworks and merging late clears nine purple tolls', () =
       }
       assert.equal(run.plazaIndex, 9);
       assert.equal(boosts, 9);
+      assert.ok(mergeDistances.size >= 4);
+      assert.equal(bypassSides.size, 2);
       assert.ok(run.cleanSpeedBonus >= 55);
     }
   }
@@ -304,23 +315,22 @@ test('full-speed steering allows small corrections, sustained turns and shoulder
   assert.ok(!run.wrecked);
 });
 
-test('toll assist centers the selected lane and yields to a deliberate lane change', () => {
+test('a split steering line holds through purple and a late manual merge works', () => {
   for (const turn of [false, true]) {
     const run = new Run();
     run.objects = [];
     run.distance = run.plaza - 78;
-    run.speed = TURBO_SPEED;
-    run.turboFuel = 2;
-    run.steering.position = turn ? 0 : .51;
-    run.steerBy(.005);
+    run.speed = 90;
+    run.steering.position = turn ? .15 : .51;
+    run.steerBy(turn ? .20 : .005);
     const dt = 1 / 60;
-    for (let tick = 0; !run.plazaIndex && tick < 70; tick++) {
-      if (turn && tick < 22) run.steerWithKeys(1, tick * dt, dt);
-      run.update(dt, true, false, true);
-    }
-    assert.equal(run.plazaIndex, 1);
+    while (!run.plazaIndex) run.update(dt, true);
     assert.equal(run.stop, 0);
-    assert.ok(Math.abs(run.steering.position - lanePosition(3)) < .035);
+    assert.equal(run.damage, 0);
+    const target = turn ? .35 : .515;
+    assert.ok(Math.abs(run.steering.position - target) < .008);
+    for (let tick = 0; tick < 12; tick++) run.update(dt, true);
+    assert.ok(Math.abs(run.steering.position - target) < .008);
   }
 });
 

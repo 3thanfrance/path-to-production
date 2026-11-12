@@ -12,25 +12,35 @@ const MAX_TIME = 60;
 const PLAZA_SPACING = 620;
 const FIRST_PLAZA = 510;
 const PLAZA_APPROACH = 230;
-const TOLL_WORK_DISTANCE = 98;
-const TOLL_RETURN_DISTANCE = 64;
-const bypassLane = lane => lane === 0 ? 1 : lane - 1;
+const TOLL_LAYOUTS = [
+  {side: -1, distance: 98, offsets: [15, 10]},
+  {side: 1, distance: 80, offsets: [8, 23]},
+  {side: -1, distance: 116, offsets: [26, 14]},
+  {side: 1, distance: 91, offsets: [8, 21]},
+  {side: 1, distance: 111, offsets: [10, 24]},
+];
 
-function tollRoadwork(gate, lane, tier = 0) {
-  const bypass = bypassLane(lane);
-  const work = [
-    {kind: 'work', lane, z: gate - TOLL_WORK_DISTANCE},
-    {kind: 'guide', lane: bypass, z: gate - 145},
-    {kind: 'guide', lane, z: gate - TOLL_RETURN_DISTANCE},
+function tollRoadwork(gate, lane, stretch, tier, entryLane, turnsAvailable) {
+  const layout = TOLL_LAYOUTS[stretch % TOLL_LAYOUTS.length];
+  const bypass = [lane + layout.side, lane - layout.side].find(candidate =>
+    candidate >= 0 && candidate < LANE_COUNT && Math.abs(candidate - entryLane) <= turnsAvailable);
+  const barrier = gate - layout.distance;
+  const entryGuide = barrier - 47;
+  const objects = [
+    {kind: 'work', lane, z: barrier},
+    {kind: 'guide', lane: bypass, z: entryGuide},
+    {kind: 'guide', lane, z: barrier + 34},
   ];
+  const outside = Array.from({length: LANE_COUNT}, (_, index) => index)
+    .filter(index => index !== bypass && index !== lane);
   if (tier >= 1) {
-    const outside = Array.from({length: LANE_COUNT}, (_, lane) => lane)
-      .filter(candidate => candidate !== bypass && candidate !== lane);
-    const near = outside.reduce((a, b) => Math.abs(a - lane) <= Math.abs(b - lane) ? a : b);
-    work.push({kind: 'work', lane: near, z: gate - 83});
-    if (tier >= 3) work.push({kind: 'work', lane: outside.find(candidate => candidate !== near), z: gate - 88});
+    const first = stretch % outside.length;
+    objects.push({kind: 'work', lane: outside[first], z: barrier + layout.offsets[0]});
+    if (tier >= 3) {
+      objects.push({kind: 'work', lane: outside[(first + 1) % outside.length], z: barrier + layout.offsets[1]});
+    }
   }
-  return work;
+  return {bypass, entryGuide, objects};
 }
 const VEHICLE_SPEEDS = [22, 25, 31, 40, 36, 33];
 export const ROAD_HALF = 3.55 * 2.5;
@@ -116,7 +126,7 @@ function openingTraffic() {
     {kind: 'hazard', type: 3, lane: 4, z: 178},
     {kind: 'deadline', lane: 3, z: 247},
     {kind: 'gem', lane: 3, z: 284},
-    ...tollRoadwork(FIRST_PLAZA, 3),
+    ...tollRoadwork(FIRST_PLAZA, 3, 0, 0, 2, 3).objects,
     {kind: 'work', lane: 4, z: 305},
     {kind: 'hazard', type: 5, lane: 1, z: 304},
   ];
@@ -135,7 +145,6 @@ export class Run {
     this.steering = { position: 0, velocity: 0 };
     this.brilliance = 0;
     this.steerTarget = null;
-    this.tollGuideLane = null;
     this.impact = null;
     this.contacts = new Set();
     this.wrecked = false;
@@ -187,22 +196,6 @@ export class Run {
     this.steerBy(direction * rate * dt);
   }
 
-  guidedSteering(target) {
-    const ahead = this.plaza - this.distance;
-    const behind = this.passedPlaza ? this.distance - this.passedPlaza.z : Infinity;
-    const blend = Math.max(clamp((105 - ahead) / 60, 0, 1), clamp((30 - behind) / 22, 0, 1));
-    if (!blend || this.steerTarget === null) {
-      this.tollGuideLane = null;
-      return target;
-    }
-    // Keep the selected lane stable near the divider, while a deliberate turn can change it.
-    if (this.tollGuideLane === null ||
-        Math.abs(target - lanePosition(this.tollGuideLane)) > .23) {
-      this.tollGuideLane = laneAt(target);
-    }
-    return target + (lanePosition(this.tollGuideLane) - target) * blend * blend * (3 - 2 * blend);
-  }
-
   get cleanSpeedBonus() {
     return clamp((this.cleanTime - 2) * 2.8, 0, 58);
   }
@@ -246,7 +239,8 @@ export class Run {
     let route = entryLane;
     const tier = Math.min(4, Math.floor((stretch - 1) / 2));
     const rowCount = 5 + Math.min(3, tier);
-    const approachLane = bypassLane(exitLane);
+    const roadwork = tollRoadwork(previousGate + PLAZA_SPACING, exitLane, stretch, tier, entryLane, rowCount - 2);
+    const approachLane = roadwork.bypass;
     const spacing = 414 / (rowCount - 1);
     let direction = 0;
     const line = [entryLane];
@@ -272,10 +266,11 @@ export class Run {
       const priorRoute = line[row - 1] ?? entryLane;
       const nextRoute = line[row + 1] ?? exitLane;
       const nearGate = row >= rowCount - 2;
+      const approachClearance = row >= rowCount - 4 ? approachLane : undefined;
       const convoy = {speed: 24 + Math.floor(this.random() * 8) + Math.min(3, tier)};
       const otherLanes = Array.from({length: LANE_COUNT}, (_, lane) => lane)
-        .filter(lane => lane !== route && lane !== priorRoute && lane !== nextRoute && (!nearGate || lane !== exitLane));
-      const first = route !== priorRoute && priorRoute !== nextRoute && (!nearGate || priorRoute !== exitLane) ? priorRoute : otherLanes.splice(
+        .filter(lane => lane !== route && lane !== priorRoute && lane !== nextRoute && lane !== approachClearance && (!nearGate || lane !== exitLane));
+      const first = route !== priorRoute && priorRoute !== nextRoute && priorRoute !== approachClearance && (!nearGate || priorRoute !== exitLane) ? priorRoute : otherLanes.splice(
         Math.floor(this.random() * otherLanes.length), 1)[0];
       const lanes = [first];
       if (otherLanes.length && (tier >= 3 || (row + stretch) % (tier >= 1 ? 2 : 3) === 0)) {
@@ -293,6 +288,7 @@ export class Run {
           protectedLane: route,
           protectedNext: nextRoute,
           protectedExit: nearGate ? exitLane : undefined,
+          protectedApproach: approachClearance,
         });
       }
       const pickup = row === 1 ? 'boost' :
@@ -301,7 +297,7 @@ export class Run {
         row === 3 && stretch % 6 === 0 ? 'repair' : null;
       if (!nearGate) {
         this.objects.push({kind: 'guide', lane: route, z: z - GUIDE_LEAD, convoy,
-          guideLimit: previousGate + PLAZA_SPACING - 145});
+          guideLimit: roadwork.entryGuide});
       }
       if (pickup) this.objects.push({kind: pickup, lane: route, z, convoy});
     }
@@ -309,7 +305,7 @@ export class Run {
     const workLane = lane => lane >= 2 ? 0 : LANE_COUNT - 1;
     this.objects.push(
       {kind: 'work', lane: workLane(entryLane), z: previousGate + 54},
-      ...tollRoadwork(previousGate + PLAZA_SPACING, exitLane, tier),
+      ...roadwork.objects,
     );
   }
 
@@ -317,12 +313,7 @@ export class Run {
     const gate = this.plaza;
     this.toll(contactLane);
     this.lane = contactLane;
-    this.tollGuideLane = contactLane;
-    if (this.steerTarget !== null) this.steerTarget = lanePosition(contactLane);
-    if (this.stop) {
-      this.steerTarget = null;
-      this.steering = {position: lanePosition(contactLane), velocity: 0};
-    }
+    if (this.stop) this.steering.velocity = 0;
     this.passedPlaza = {
       z: gate, purple: this.purple, stoppedLane: this.stop ? this.lane : -1,
       duration: this.stop, waited: 0,
@@ -464,7 +455,7 @@ export class Run {
       const leavingExpress = vehicle.lane === this.purple && toGate > 25 && toGate < 175;
       if (!vehicle.merge && leavingExpress) {
         const adjacent = [vehicle.lane - 1, vehicle.lane + 1].find(lane => lane >= 0 &&
-          lane < LANE_COUNT && lane !== vehicle.protectedLane && lane !== vehicle.protectedNext && lane !== vehicle.protectedExit && clearToMerge(vehicle, lane));
+          lane < LANE_COUNT && lane !== vehicle.protectedLane && lane !== vehicle.protectedNext && lane !== vehicle.protectedExit && lane !== vehicle.protectedApproach && clearToMerge(vehicle, lane));
         if (adjacent !== undefined) vehicle.merge = {to: adjacent, elapsed: 0};
       }
       if (vehicle.merge) {
@@ -484,7 +475,7 @@ export class Run {
         if (fromGate > 108 && fromGate < PLAZA_SPACING - 155) {
           vehicle.mergeEligible = false;
           const lanes = [vehicle.lane - 1, vehicle.lane + 1].filter(lane =>
-            lane >= 0 && lane < LANE_COUNT && lane !== vehicle.protectedLane && lane !== vehicle.protectedNext && lane !== vehicle.protectedExit &&
+            lane >= 0 && lane < LANE_COUNT && lane !== vehicle.protectedLane && lane !== vehicle.protectedNext && lane !== vehicle.protectedExit && lane !== vehicle.protectedApproach &&
             !(lane === this.purple && toGate < 220 && toGate > 0) &&
             Math.abs(lanePosition(lane) - playerLane) > .16 && clearToMerge(vehicle, lane));
           if (lanes.length) vehicle.merge = {to: lanes[0], elapsed: 0};
@@ -556,13 +547,14 @@ export class Run {
     const solids = this.objects.filter(item => item.kind === 'hazard' || item.kind === 'work');
     const starts = new Map(solids.map(item => [item, {x: obstacleLane(item), z: item.z}]));
     if (!held) {
-      const target = this.guidedSteering(this.steerTarget ?? lanePosition(this.lane));
+      const target = this.steerTarget ?? lanePosition(this.lane);
       const response = this.steerTarget === null ? 17 :
-        this.tollGuideLane !== null ? 20 : 16 - 2 * clamp(this.speed / (TURBO_SPEED + 30), 0, 1);
+        16 - 2 * clamp(this.speed / (TURBO_SPEED + 30), 0, 1);
       this.steering = stepSteering(start.x, this.steering.velocity, target, dt, response);
       this.steering.position = Math.max(-ROAD_EDGE, Math.min(ROAD_EDGE, this.steering.position));
     }
     let gateLane = null;
+    let gateLine;
     if (held) {
       this.flow = 0;
       this.speed = 0;
@@ -586,11 +578,22 @@ export class Run {
         this.warned = true;
         this.notify('ROADWORK AT TOLL · BRAKE AND WEAVE', 1.7);
       }
-      const contactLane = laneAt(this.steering.position);
-      const stopLine = this.plaza - (contactLane === this.purple ? 0 : 12);
-      if (this.distance >= stopLine) {
-        this.distance = stopLine;
-        gateLane = contactLane;
+      const redLine = this.plaza - 12;
+      if (this.distance >= redLine) {
+        const travel = this.distance - before;
+        const laneAtLine = line => {
+          const fraction = travel ? clamp((line - before) / travel, 0, 1) : 0;
+          return laneAt(start.x + (this.steering.position - start.x) * fraction);
+        };
+        const redLane = laneAtLine(redLine);
+        if (redLane !== this.purple) {
+          gateLane = redLane;
+          gateLine = Math.max(redLine, before);
+        } else if (this.distance >= this.plaza) {
+          gateLane = laneAtLine(this.plaza);
+          gateLine = this.plaza;
+        }
+        if (gateLane !== null) this.distance = gateLine;
       }
       if (this.passedPlaza && this.distance > this.passedPlaza.z + 65) this.passedPlaza = null;
       if (before < PRODUCTION_DISTANCE && this.distance >= PRODUCTION_DISTANCE) {
@@ -630,7 +633,7 @@ export class Run {
     if (first) this.resolveRoadContact(first.item, first.hit, {player, object: first.object}, dt);
     this.contacts = new Set(first ? [first.item] : []);
     if (this.wrecked) return;
-    if (gateLane !== null && this.distance >= this.plaza - (gateLane === this.purple ? 0 : 12)) this.passPlaza(gateLane);
+    if (gateLane !== null && this.distance >= gateLine) this.passPlaza(gateLane);
 
     for (const object of this.objects) {
       if (held || this.stop || object.hit || object.kind === 'hazard' || object.kind === 'work' || object.kind === 'guide' ||
