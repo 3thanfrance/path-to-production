@@ -135,7 +135,6 @@ function openingTraffic(layout) {
     {kind: 'hazard', type: 2, lane: 1, z: 167},
     {kind: 'hazard', type: 3, lane: 4, z: 178},
     {kind: 'deadline', lane: 3, z: 247},
-    {kind: 'gem', lane: 3, z: 284},
     ...tollRoadwork(FIRST_PLAZA, 3, layout, 0, 0, 2, 3).objects,
     {kind: 'work', lane: 4, z: 305},
     {kind: 'hazard', type: 5, lane: 1, z: 304},
@@ -153,7 +152,6 @@ export class Run {
     this.speed = 35;
     this.lane = 2;
     this.steering = { position: 0, velocity: 0 };
-    this.brilliance = 0;
     this.steerTarget = null;
     this.impact = null;
     this.contacts = new Set();
@@ -307,8 +305,7 @@ export class Run {
         });
       }
       const pickup = row === 1 ? 'boost' :
-        row === 2 ? (stretch % 2 ? 'deadline' : 'gem') :
-        row === 0 && stretch % 2 ? 'gem' :
+        row === 2 && stretch % 2 ? 'deadline' :
         row === 3 && stretch % 6 === 0 ? 'repair' : null;
       if (!nearGate) {
         this.objects.push({kind: 'guide', lane: route, z: z - GUIDE_LEAD, convoy,
@@ -364,11 +361,6 @@ export class Run {
         this.events.push('deadline');
         break;
       }
-      case 'gem':
-        this.brilliance += 3;
-        if (!this.messageTime) this.notify('+3 BRILLIANCE', 1.2);
-        this.events.push('gem');
-        break;
     }
   }
 

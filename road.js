@@ -705,11 +705,7 @@ export function createRoad(ctx) {
         line(x, floatY - r * .54, x, floatY, color, 2 * size);
         line(x, floatY, x + r * .46, floatY + r * .26, color, 2 * size);
       }
-    } else {
-      const r = 15 * size;
-      glow(x, floatY, r * 1.8, '#f8d9ff', '#c63df4d7');
-      shape([[x, floatY - r], [x + r * .7, floatY], [x, floatY + r], [x - r * .7, floatY]],
-        gradient(x - r, floatY - r, x + r, floatY + r, ['#fff2ff', '#c86bff', '#7a04d8']), '#ffdfff', Math.max(1, size));
+
     }
   }
 

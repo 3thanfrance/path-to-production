@@ -389,9 +389,8 @@ export function createRoad3D(canvas) {
     return root;
   }
 
-  const tokenMaterials = {gem: neon(0xd676ff), boost: blue, deadline: neon(0x97ffb2), repair: neon(0xffd17c)};
+  const tokenMaterials = {boost: blue, deadline: neon(0x97ffb2), repair: neon(0xffd17c)};
   const tokenShapes = {
-    gem: new T.OctahedronGeometry(.39),
     boost: new T.OctahedronGeometry(.36),
     deadline: new T.CylinderGeometry(.36, .36, .11, 18).rotateX(Math.PI / 2),
   };

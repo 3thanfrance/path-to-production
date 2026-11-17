@@ -276,7 +276,7 @@ test('braking for the roadworks and merging late clears nine purple tolls', () =
         run.update(dt, accelerate, run.speed > (approachingWorks ? 62 : 147), !approachingWorks && run.speed < 147 && run.turboFuel > 0);
         assert.ok(!run.events.includes('crash'), `seed ${start}, throttle ${accelerate}, crash at ${run.distance}`);
         assert.equal(run.stop, 0, `seed ${start}, toll at ${run.distance}`);
-        const missed = run.objects.find(item => ['boost', 'gem', 'deadline', 'repair'].includes(item.kind) && !item.hit && item.z < run.distance - 5);
+        const missed = run.objects.find(item => ['boost', 'deadline', 'repair'].includes(item.kind) && !item.hit && item.z < run.distance - 5);
         assert.equal(missed, undefined, `seed ${start}, missed ${missed?.kind} at ${missed?.z}`);
         if (run.events.includes('charge')) {
           boosts++;
